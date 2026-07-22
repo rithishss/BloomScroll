@@ -12,6 +12,9 @@
 
 # testing
 /coverage
+/test-results/
+/playwright-report/
+/blob-report/
 
 # next.js
 /.next/
@@ -35,6 +38,9 @@ yarn-error.log*
 
 # vercel
 .vercel
+
+# claude code local settings (per-developer, not shared)
+.claude/settings.local.json
 
 # typescript
 *.tsbuildinfo
