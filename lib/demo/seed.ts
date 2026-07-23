@@ -1,4 +1,5 @@
 import { DEMO_DOCS, OS_NOTES, SS_NOTES, type DemoDocContent } from "@/lib/demo/content";
+import { buildNarrationScript } from "@/lib/video/narration";
 import type {
   CardState,
   CardType,
@@ -410,6 +411,35 @@ const CARD_SPECS: DemoCardSpec[] = [
   },
 ];
 
+/** Measured (via ffprobe) durations of the pre-rendered demo reels, keyed by
+ * card key. Filled in by scripts/generate-demo-videos.ts; a card missing
+ * here simply has no reel yet. */
+export const DEMO_VIDEO_DURATIONS: Record<string, number> = {
+  "os-process": 31.2,
+  "os-threads": 22.6,
+  "os-sjf": 11.1,
+  "os-quantum": 21.4,
+  "os-vm": 23.5,
+  "os-tlb": 21.8,
+  "os-belady": 23,
+  "os-race": 23.6,
+  "os-deadlock-hook": 20.5,
+  "os-lock-order": 8.1,
+  "os-inode": 26.7,
+  "os-journal": 18.1,
+  "ss-impulse": 22.9,
+  "ss-properties": 21.2,
+  "ss-impulse-response": 24.5,
+  "ss-convolution": 23.2,
+  "ss-delay": 21.9,
+  "ss-fourier-series": 24.1,
+  "ss-fourier-transform": 23.8,
+  "ss-filtering": 8.9,
+  "ss-nyquist": 24.7,
+  "ss-alias-hook": 21.9,
+  "ss-poles": 23.2,
+};
+
 export function buildDemoCards(): StudyCard[] {
   return CARD_SPECS.map((spec) => ({
     id: `card-${spec.key}`,
@@ -428,6 +458,8 @@ export function buildDemoCards(): StudyCard[] {
     pageStart: spec.page,
     pageEnd: spec.page,
     createdAt: SEED_CREATED_AT,
+    videoDurationSeconds: DEMO_VIDEO_DURATIONS[spec.key] ?? null,
+    narrationScript: buildNarrationScript({ explanation: spec.explanation, takeaway: spec.takeaway ?? null }),
   }));
 }
 

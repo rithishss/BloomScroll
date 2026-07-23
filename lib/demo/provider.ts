@@ -36,11 +36,12 @@ const UPLOAD_NOTE =
 /** Simulated pipeline stages for demo uploads: honest theatre, clearly labeled. */
 const DEMO_STAGES: Array<{ status: DocumentSummary["status"]; progress: number; delayMs: number }> =
   [
-    { status: "extracting", progress: 22, delayMs: 900 },
-    { status: "chunking", progress: 42, delayMs: 900 },
-    { status: "embedding", progress: 64, delayMs: 1100 },
-    { status: "generating", progress: 86, delayMs: 1200 },
-    { status: "ready", progress: 100, delayMs: 900 },
+    { status: "extracting", progress: 18, delayMs: 900 },
+    { status: "chunking", progress: 34, delayMs: 900 },
+    { status: "embedding", progress: 52, delayMs: 1000 },
+    { status: "generating", progress: 68, delayMs: 1100 },
+    { status: "rendering", progress: 90, delayMs: 1300 },
+    { status: "ready", progress: 100, delayMs: 800 },
   ];
 
 export class DemoProvider implements DataProvider {
@@ -218,6 +219,17 @@ export class DemoProvider implements DataProvider {
       return { url: `/demo-pdfs/${seeded.originalFilename}`, note: null };
     }
     return { url: null, note: UPLOAD_NOTE };
+  }
+
+  async getCardVideoUrl(cardId: string): Promise<{ url: string | null; note: string | null }> {
+    const card = this.seedCards.find((c) => c.id === cardId);
+    if (card?.videoDurationSeconds != null) {
+      return { url: `/demo-videos/${card.id}.mp4`, note: null };
+    }
+    return {
+      url: null,
+      note: "This demo card doesn't have a pre-rendered reel yet.",
+    };
   }
 
   // ── Feed & interactions ──────────────────────────────────────────────

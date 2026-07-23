@@ -16,9 +16,10 @@ import { cn } from "@/lib/utils";
 const SESSION_GOAL = 10;
 
 /**
- * The feed: a personalized, swipeable queue of study cards. Pages are pulled
- * lazily from the provider; cards acted on in this session never reappear
- * until the queue is exhausted and the user explicitly starts a new round.
+ * The feed: a personalized, swipeable queue of narrated video reels. Pages
+ * are pulled lazily from the provider; reels acted on in this session never
+ * reappear until the queue is exhausted and the user explicitly starts a
+ * new round.
  */
 export function FeedScreen({ basePath }: { basePath: string }) {
   const provider = useDataProvider();
@@ -277,7 +278,7 @@ function EmptyFeed({ basePath }: { basePath: string }) {
       <h2 className="font-display mt-4 text-xl font-semibold">Nothing has bloomed yet</h2>
       <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
         Upload a PDF of your notes or a textbook chapter and BloomScroll will turn it into
-        swipeable, source-grounded study cards.
+        swipeable, source-grounded narrated video reels.
       </p>
       <Button asChild className="mt-5">
         <Link href={`${basePath}/upload`}>

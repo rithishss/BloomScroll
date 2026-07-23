@@ -25,40 +25,50 @@ test("landing page loads with the hero and both CTAs", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-test("entering the demo lands on the feed with a card visible", async ({ page }) => {
+test("entering the demo lands on the feed with a reel visible", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("link", { name: /try the interactive demo/i }).click();
   await page.waitForURL(/\/demo\/feed/);
   await expect(page.getByRole("heading", { name: /today's feed/i })).toBeVisible();
-  // The primary card face should render with visible interaction controls.
+  // The primary reel should resolve to a real, bundled demo video.
+  const video = page.locator("video");
+  await expect(video).toHaveAttribute("src", /\/demo-videos\/.+\.mp4$/, { timeout: 10_000 });
+  // Visible interaction controls — gestures are never the only way.
   await expect(page.getByRole("button", { name: /got it/i })).toBeVisible();
   await expect(page.getByRole("button", { name: /review again/i })).toBeVisible();
 });
 
 test("Got it and Review again advance to the next card", async ({ page }) => {
   await page.goto("/demo/feed");
-  const firstTitle = await page.locator("article h2").first().textContent();
+  // Each reel's <video> has a unique aria-label ("<title> — narrated reel"),
+  // which is the reliable per-card signal now that titles are baked into
+  // the video frame rather than rendered as HTML text. The exiting and
+  // entering reel briefly coexist during the transition animation, so
+  // .first() (not a bare locator) is used throughout to avoid a strict-mode
+  // multi-match error.
+  const reelLabel = page.locator("video").first();
+  const firstLabel = await reelLabel.getAttribute("aria-label");
 
   await page.getByRole("button", { name: /got it/i }).click();
-  await expect(page.locator("article h2").first()).not.toHaveText(firstTitle ?? "", {
-    timeout: 5000,
-  });
+  await expect(page.locator("video")).toHaveCount(1, { timeout: 5000 });
+  await expect(reelLabel).not.toHaveAttribute("aria-label", firstLabel ?? "", { timeout: 5000 });
 
-  const secondTitle = await page.locator("article h2").first().textContent();
+  const secondLabel = await reelLabel.getAttribute("aria-label");
   await page.getByRole("button", { name: /review again/i }).click();
-  await expect(page.locator("article h2").first()).not.toHaveText(secondTitle ?? "", {
-    timeout: 5000,
-  });
+  await expect(page.locator("video")).toHaveCount(1, { timeout: 5000 });
+  await expect(reelLabel).not.toHaveAttribute("aria-label", secondLabel ?? "", { timeout: 5000 });
 });
 
 test("a card can be saved and then appears on the Saved screen", async ({ page }) => {
   await page.goto("/demo/feed");
-  const title = await page.locator("article h2").first().textContent();
+  const label = await page.locator("video").first().getAttribute("aria-label");
+  const title = (label ?? "").replace(/ — narrated reel$/, "");
+
   await page.getByRole("button", { name: /save card/i }).click();
   await expect(page.getByText(/saved for later/i)).toBeVisible();
 
   await page.goto("/demo/saved");
-  await expect(page.getByText(title ?? "", { exact: false }).first()).toBeVisible();
+  await expect(page.getByText(title, { exact: false }).first()).toBeVisible();
 });
 
 test("the source drawer shows a document title and page number", async ({ page }) => {

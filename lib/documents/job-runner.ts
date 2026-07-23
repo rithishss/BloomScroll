@@ -5,12 +5,18 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getEmbeddings, toVectorLiteral } from "@/lib/ai/models";
 import { generateStudyCards } from "@/lib/ai/generate-cards";
 import { extractPdfPages, PdfExtractionError } from "@/lib/documents/pdf";
+import { renderSlidePng } from "@/lib/video/slide";
+import { synthesizeNarration } from "@/lib/video/tts";
+import { composeReel } from "@/lib/video/compose";
+import { buildNarrationScript } from "@/lib/video/narration";
+import { formatPageRange } from "@/lib/utils";
 import {
   PipelineUserError,
   processDocument,
   type PipelineDb,
   type PipelineDeps,
   type PipelineResult,
+  type RenderedVideo,
 } from "@/lib/documents/pipeline";
 
 /**
@@ -23,7 +29,7 @@ import {
 
 type AdminClient = SupabaseClient<Database>;
 
-function buildDb(admin: AdminClient, userId: string): PipelineDb {
+function buildDb(admin: AdminClient, userId: string, documentId: string): PipelineDb {
   return {
     async claimDocument(documentId) {
       // Status-transition claim: only claimable when not already mid-flight.
@@ -53,6 +59,21 @@ function buildDb(admin: AdminClient, userId: string): PipelineDb {
       if (error) throw new Error(`document update failed: ${error.message}`);
     },
     async deleteDerivedData(documentId) {
+      // Video files from a prior partial run have no FK cascade (they live
+      // in storage, not the DB), so remove them before the rows disappear.
+      const { data: stale } = await admin
+        .from("study_cards")
+        .select("video_storage_path")
+        .eq("document_id", documentId)
+        .eq("user_id", userId)
+        .not("video_storage_path", "is", null);
+      const stalePaths = (stale ?? [])
+        .map((row) => row.video_storage_path)
+        .filter((p): p is string => Boolean(p));
+      if (stalePaths.length > 0) {
+        await admin.storage.from("documents").remove(stalePaths);
+      }
+
       const cards = await admin
         .from("study_cards")
         .delete()
@@ -86,25 +107,49 @@ function buildDb(admin: AdminClient, userId: string): PipelineDb {
       return (data ?? []).map((row) => ({ id: row.id, chunkIndex: row.chunk_index }));
     },
     async insertCards(documentId, cards) {
-      const { error } = await admin.from("study_cards").insert(
-        cards.map((card) => ({
-          document_id: documentId,
-          user_id: userId,
-          card_type: card.card_type,
-          topic: card.topic,
-          title: card.title,
-          explanation: card.explanation,
-          question: card.question ?? null,
-          answer: card.answer ?? null,
-          takeaway: card.takeaway ?? null,
-          difficulty: card.difficulty,
-          source_chunk_ids: card.sourceChunkIds,
-          source_excerpt: card.sourceExcerpt,
-          page_start: card.pageStart,
-          page_end: card.pageEnd,
-        })),
-      );
+      const { data, error } = await admin
+        .from("study_cards")
+        .insert(
+          cards.map((card) => ({
+            document_id: documentId,
+            user_id: userId,
+            card_type: card.card_type,
+            topic: card.topic,
+            title: card.title,
+            explanation: card.explanation,
+            question: card.question ?? null,
+            answer: card.answer ?? null,
+            takeaway: card.takeaway ?? null,
+            difficulty: card.difficulty,
+            source_chunk_ids: card.sourceChunkIds,
+            source_excerpt: card.sourceExcerpt,
+            page_start: card.pageStart,
+            page_end: card.pageEnd,
+          })),
+        )
+        .select("id");
       if (error) throw new Error(`card insert failed: ${error.message}`);
+      // Postgres preserves array order through a single INSERT ... RETURNING,
+      // so this lines up positionally with the `cards` array the pipeline passed in.
+      return (data ?? []).map((row) => ({ id: row.id }));
+    },
+    async saveCardVideo(cardId, video) {
+      const storagePath = `${userId}/${documentId}/reels/${cardId}.mp4`;
+      const { error: uploadError } = await admin.storage
+        .from("documents")
+        .upload(storagePath, video.mp4, { contentType: "video/mp4", upsert: true });
+      if (uploadError) throw new Error(`video upload failed: ${uploadError.message}`);
+
+      const { error } = await admin
+        .from("study_cards")
+        .update({
+          video_storage_path: storagePath,
+          video_duration_seconds: video.durationSeconds,
+          narration_script: video.narrationScript,
+        })
+        .eq("id", cardId)
+        .eq("user_id", userId);
+      if (error) throw new Error(`card video update failed: ${error.message}`);
     },
   };
 }
@@ -130,8 +175,49 @@ async function embedWithRetries(texts: string[]): Promise<number[][]> {
   );
 }
 
+const MAX_VIDEO_ATTEMPTS = 3;
+
+/** Renders one card's reel: narration script → TTS → slide → ffmpeg compose. */
+async function renderVideoWithRetries(
+  card: Parameters<PipelineDeps["renderVideo"]>[0],
+  documentTitle: string,
+): Promise<RenderedVideo> {
+  const narrationScript = buildNarrationScript(card);
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= MAX_VIDEO_ATTEMPTS; attempt++) {
+    try {
+      const [slidePng, narrationMp3] = await Promise.all([
+        renderSlidePng({
+          cardType: card.card_type,
+          topic: card.topic,
+          title: card.title,
+          explanation: card.explanation,
+          takeaway: card.takeaway ?? null,
+          difficulty: card.difficulty,
+          documentTitle,
+          pageLabel: formatPageRange(card.pageStart, card.pageEnd),
+        }),
+        synthesizeNarration(narrationScript),
+      ]);
+      const { mp4, durationSeconds } = await composeReel(slidePng, narrationMp3);
+      return { mp4, durationSeconds, narrationScript };
+    } catch (err) {
+      lastError = err;
+      if (attempt < MAX_VIDEO_ATTEMPTS) {
+        await new Promise((r) => setTimeout(r, 800 * 2 ** (attempt - 1)));
+      }
+    }
+  }
+  throw new PipelineUserError(
+    `Rendering "${card.title}" as a reel failed after ${MAX_VIDEO_ATTEMPTS} attempts: ${
+      lastError instanceof Error ? lastError.message : "unknown error"
+    }`,
+  );
+}
+
 export async function runIngestion(
   documentId: string,
+  documentTitle: string,
   userId: string,
   storagePath: string,
 ): Promise<PipelineResult> {
@@ -141,7 +227,7 @@ export async function runIngestion(
   }
 
   const deps: PipelineDeps = {
-    db: buildDb(admin, userId),
+    db: buildDb(admin, userId, documentId),
     async downloadPdf() {
       const { data, error } = await admin.storage.from("documents").download(storagePath);
       if (error || !data) {
@@ -161,7 +247,8 @@ export async function runIngestion(
     },
     embedTexts: embedWithRetries,
     generateCards: generateStudyCards,
+    renderVideo: renderVideoWithRetries,
   };
 
-  return processDocument(documentId, deps);
+  return processDocument(documentId, documentTitle, deps);
 }

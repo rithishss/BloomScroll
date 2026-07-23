@@ -26,6 +26,8 @@ function card(overrides: Partial<StudyCard> = {}): StudyCard {
     pageStart: 1,
     pageEnd: 1,
     createdAt: "2026-01-01T00:00:00.000Z",
+    videoDurationSeconds: 30,
+    narrationScript: "Explanation text.",
     ...overrides,
   };
 }

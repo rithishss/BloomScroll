@@ -5,15 +5,22 @@ import type { GeneratedCardWithSource, GenerationChunk } from "@/lib/ai/generate
 /**
  * The ingestion pipeline as a pure orchestration over injected dependencies.
  * The job runner (lib/documents/job-runner.ts) wires in Supabase, LangChain
- * PDF extraction, embeddings, and generation; integration tests wire in
- * fakes. Swapping the inline runner for a queue worker means re-hosting this
- * function, not rewriting it.
+ * PDF extraction, embeddings, script generation, and video rendering;
+ * integration tests wire in fakes. Swapping the inline runner for a queue
+ * worker means re-hosting this function, not rewriting it.
  *
  * Lifecycle (with progress milestones):
  *   claim (guards double-processing) → cleanup partial rows (retry safety)
- *   → extract (10%) → chunk (35%) → embed in batches (40→70%)
- *   → generate + validate + dedupe cards (75→95%) → ready (100%)
+ *   → extract (10%) → chunk (25%) → embed in batches (40→70%)
+ *   → write card scripts (75→80%) → render a narrated reel per card,
+ *   still image + TTS + ffmpeg (80→98%) → ready (100%)
  */
+
+export interface RenderedVideo {
+  mp4: Buffer;
+  durationSeconds: number;
+  narrationScript: string;
+}
 
 export interface PipelineDb {
   /** Atomically claims the document for processing. Returns false when the
@@ -34,7 +41,10 @@ export interface PipelineDb {
     documentId: string,
     chunks: (ChunkWithPages & { embedding: number[] | null })[],
   ): Promise<{ id: string; chunkIndex: number }[]>;
-  insertCards(documentId: string, cards: GeneratedCardWithSource[]): Promise<void>;
+  /** Returns the inserted rows' ids in the same order as the input cards. */
+  insertCards(documentId: string, cards: GeneratedCardWithSource[]): Promise<{ id: string }[]>;
+  /** Uploads the rendered mp4 to storage and records its path/duration/script on the card. */
+  saveCardVideo(cardId: string, video: RenderedVideo): Promise<void>;
 }
 
 export interface PipelineDeps {
@@ -44,6 +54,8 @@ export interface PipelineDeps {
   /** Batched with retries by the implementation. */
   embedTexts(texts: string[]): Promise<number[][]>;
   generateCards(chunks: GenerationChunk[]): Promise<GeneratedCardWithSource[]>;
+  /** Renders one narrated reel (slide + TTS + ffmpeg compose) for a card. */
+  renderVideo(card: GeneratedCardWithSource, documentTitle: string): Promise<RenderedVideo>;
 }
 
 export class PipelineUserError extends Error {
@@ -60,6 +72,7 @@ export type PipelineResult =
 
 export async function processDocument(
   documentId: string,
+  documentTitle: string,
   deps: PipelineDeps,
 ): Promise<PipelineResult> {
   const { db } = deps;
@@ -83,7 +96,7 @@ export async function processDocument(
     const { pages, pageCount } = await deps.extractPages(pdf);
     await db.updateDocument(documentId, {
       status: "chunking",
-      processingProgress: 25,
+      processingProgress: 20,
       pageCount,
     });
 
@@ -91,7 +104,7 @@ export async function processDocument(
     if (chunks.length === 0) {
       throw new PipelineUserError("No usable text was found in this PDF.");
     }
-    await db.updateDocument(documentId, { status: "embedding", processingProgress: 40 });
+    await db.updateDocument(documentId, { status: "embedding", processingProgress: 35 });
 
     // Embed in bounded batches; progress advances per batch.
     const BATCH_SIZE = 32;
@@ -100,15 +113,15 @@ export async function processDocument(
       const batch = chunks.slice(i, i + BATCH_SIZE);
       const vectors = await deps.embedTexts(batch.map((c) => c.content));
       embeddings.push(...vectors);
-      const progress = 40 + Math.round(((i + batch.length) / chunks.length) * 30);
-      await db.updateDocument(documentId, { processingProgress: Math.min(70, progress) });
+      const progress = 35 + Math.round(((i + batch.length) / chunks.length) * 25);
+      await db.updateDocument(documentId, { processingProgress: Math.min(60, progress) });
     }
 
     const inserted = await db.insertChunks(
       documentId,
       chunks.map((chunk, i) => ({ ...chunk, embedding: embeddings[i] ?? null })),
     );
-    await db.updateDocument(documentId, { status: "generating", processingProgress: 75 });
+    await db.updateDocument(documentId, { status: "generating", processingProgress: 65 });
 
     // Map inserted chunk ids back onto generation inputs by chunk index.
     const idByIndex = new Map(inserted.map((row) => [row.chunkIndex, row.id]));
@@ -122,11 +135,23 @@ export async function processDocument(
     const cards = await deps.generateCards(generationChunks);
     if (cards.length === 0) {
       throw new PipelineUserError(
-        "Card generation produced no valid cards for this document. Try reprocessing.",
+        "Script generation produced no valid cards for this document. Try reprocessing.",
       );
     }
-    await db.updateDocument(documentId, { processingProgress: 95 });
-    await db.insertCards(documentId, cards);
+    await db.updateDocument(documentId, { status: "rendering", processingProgress: 78 });
+    const insertedCards = await db.insertCards(documentId, cards);
+
+    // Render one narrated reel per card. Sequential, not parallel: ffmpeg
+    // and TTS are both CPU/rate-limit sensitive, and progress needs to
+    // advance smoothly per card rather than jump at the end.
+    for (let i = 0; i < cards.length; i++) {
+      const cardRow = insertedCards[i];
+      if (!cardRow) continue;
+      const video = await deps.renderVideo(cards[i], documentTitle);
+      await db.saveCardVideo(cardRow.id, video);
+      const progress = 78 + Math.round(((i + 1) / cards.length) * 20);
+      await db.updateDocument(documentId, { processingProgress: Math.min(98, progress) });
+    }
 
     await db.updateDocument(documentId, { status: "ready", processingProgress: 100 });
     return { status: "ready", chunkCount: chunks.length, cardCount: cards.length };

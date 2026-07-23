@@ -22,6 +22,8 @@ const serverEnvSchema = z.object({
   OPENAI_BASE_URL: z.string().url().optional(),
   OPENAI_CHAT_MODEL: z.string().min(1).default("gpt-4o-mini"),
   OPENAI_EMBEDDING_MODEL: z.string().min(1).default("text-embedding-3-small"),
+  OPENAI_TTS_MODEL: z.string().min(1).default("gpt-4o-mini-tts"),
+  OPENAI_TTS_VOICE: z.string().min(1).default("alloy"),
   MAX_PDF_SIZE_MB: z.coerce.number().int().positive().max(100).default(20),
 });
 
@@ -32,6 +34,8 @@ export interface ServerConfig {
     baseUrl: string | null;
     chatModel: string;
     embeddingModel: string;
+    ttsModel: string;
+    ttsVoice: string;
   } | null;
   maxPdfSizeMb: number;
   maxPdfSizeBytes: number;
@@ -60,6 +64,8 @@ export function parseServerEnv(env: Record<string, string | undefined>): ServerC
         baseUrl: parsed.OPENAI_BASE_URL ?? null,
         chatModel: parsed.OPENAI_CHAT_MODEL,
         embeddingModel: parsed.OPENAI_EMBEDDING_MODEL,
+        ttsModel: parsed.OPENAI_TTS_MODEL,
+        ttsVoice: parsed.OPENAI_TTS_VOICE,
       }
     : null;
 

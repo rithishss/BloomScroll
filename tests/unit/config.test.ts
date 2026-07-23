@@ -42,6 +42,8 @@ describe("parseServerEnv", () => {
       baseUrl: null,
       chatModel: "gpt-4o-mini",
       embeddingModel: "text-embedding-3-small",
+      ttsModel: "gpt-4o-mini-tts",
+      ttsVoice: "alloy",
     });
   });
 

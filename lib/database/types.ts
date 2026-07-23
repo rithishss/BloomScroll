@@ -75,6 +75,9 @@ type StudyCardRow = {
   page_start: number;
   page_end: number;
   generation_version: number;
+  video_storage_path: string | null;
+  video_duration_seconds: number | null;
+  narration_script: string | null;
   created_at: string;
 };
 

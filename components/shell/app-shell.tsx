@@ -163,7 +163,7 @@ export function AppShell({
         <header className="sticky top-0 z-40 flex items-center justify-between gap-2 border-b border-border bg-background/85 px-4 py-3 backdrop-blur md:hidden">
           <Wordmark href={`${basePath}/feed`} markClassName="size-6" className="[&>span]:text-lg" />
           <div className="flex items-center gap-1">
-            {isDemo ? <DemoBadge /> : null}
+            {isDemo ? <DemoBadge compact /> : null}
             <Button
               variant="ghost"
               size="icon"

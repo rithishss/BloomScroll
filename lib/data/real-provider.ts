@@ -123,6 +123,10 @@ export class RealProvider implements DataProvider {
     return call(`/api/documents/${encodeURIComponent(documentId)}/signed-url`);
   }
 
+  async getCardVideoUrl(cardId: string): Promise<{ url: string | null; note: string | null }> {
+    return call(`/api/cards/${encodeURIComponent(cardId)}/video-url`);
+  }
+
   async getFeed(opts: {
     documentIds?: string[];
     cursor?: string | null;

@@ -62,6 +62,10 @@ export interface DataProvider {
   searchCards(query: string): Promise<FeedItem[]>;
   /** Resolves stored source passages (always ownership-filtered in real mode). */
   getChunks(chunkIds: string[]): Promise<SourceChunk[]>;
+  /** Playable URL for a card's rendered reel: a short-lived signed URL in
+   * real mode, a bundled static file in demo mode. `null` url with a note
+   * when the reel isn't available yet (e.g. still rendering). */
+  getCardVideoUrl(cardId: string): Promise<{ url: string | null; note: string | null }>;
 
   ask(input: {
     question: string;

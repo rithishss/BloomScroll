@@ -154,7 +154,8 @@ export function UploadScreen({ basePath }: { basePath: string }) {
               "Uploading",
               "Extracting text",
               "Organizing concepts",
-              "Generating cards",
+              "Writing scripts",
+              "Rendering reels",
               "Ready",
             ].map((label, i) => (
               <li key={label} className="flex items-center gap-2">

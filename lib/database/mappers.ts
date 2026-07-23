@@ -80,6 +80,8 @@ export function mapStudyCard(row: Row<"study_cards">, documentTitle: string): St
     pageStart: row.page_start,
     pageEnd: row.page_end,
     createdAt: row.created_at,
+    videoDurationSeconds: row.video_duration_seconds,
+    narrationScript: row.narration_script,
   };
 }
 

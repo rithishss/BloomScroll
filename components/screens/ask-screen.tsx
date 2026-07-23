@@ -133,6 +133,8 @@ export function AskScreen() {
       pageStart: citation.pageStart,
       pageEnd: citation.pageEnd,
       createdAt: new Date().toISOString(),
+      videoDurationSeconds: null,
+      narrationScript: null,
     });
     setCitationOpen(true);
   };

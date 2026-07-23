@@ -8,8 +8,11 @@ import { runIngestion } from "@/lib/documents/job-runner";
 
 const paramsSchema = z.object({ documentId: z.string().uuid() });
 
-/** Ingestion can take a while on large PDFs; allow up to 5 minutes. */
-export const maxDuration = 300;
+/** Ingestion renders one narrated reel per card (TTS + ffmpeg each), so a
+ * document with many cards can take several minutes; allow up to 10. Hosts
+ * with shorter serverless function limits (e.g. Vercel's default tier) may
+ * need a queue-based worker for large documents — see docs/ARCHITECTURE.md. */
+export const maxDuration = 600;
 
 /**
  * Starts (or retries) ingestion for an owned document. The pipeline itself
@@ -42,7 +45,7 @@ export async function POST(_request: Request, ctx: { params: Promise<{ documentI
     // touches anything with the service role.
     const { data: doc, error } = await auth.supabase
       .from("documents")
-      .select("id, storage_path, status")
+      .select("id, title, storage_path, status")
       .eq("id", documentId)
       .eq("user_id", auth.user.id)
       .maybeSingle();
@@ -50,7 +53,7 @@ export async function POST(_request: Request, ctx: { params: Promise<{ documentI
     if (!doc) return apiError("not_found", "Document not found.");
     if (!doc.storage_path) return apiError("conflict", "The document has no stored file.");
 
-    const result = await runIngestion(documentId, auth.user.id, doc.storage_path);
+    const result = await runIngestion(documentId, doc.title, auth.user.id, doc.storage_path);
     if (result.status === "already_processing") {
       return apiError("conflict", "This document is already being processed.");
     }

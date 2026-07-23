@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { BookOpen, Bookmark, Check, RotateCcw, Search } from "lucide-react";
+import { BookOpen, Bookmark, Check, Play, RotateCcw, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SourceDrawer } from "@/components/feed/source-drawer";
+import { ReelModal } from "@/components/feed/reel-modal";
 import { useDataProvider } from "@/lib/data/provider-context";
 import {
   CARD_TYPE_LABELS,
@@ -36,6 +37,8 @@ export function SavedScreen({ basePath }: { basePath: string }) {
   const [difficultyFilter, setDifficultyFilter] = useState<string>("all");
   const [sourceCard, setSourceCard] = useState<StudyCard | null>(null);
   const [sourceOpen, setSourceOpen] = useState(false);
+  const [reelCard, setReelCard] = useState<StudyCard | null>(null);
+  const [reelOpen, setReelOpen] = useState(false);
 
   const refresh = useCallback(() => {
     provider
@@ -200,6 +203,16 @@ export function SavedScreen({ basePath }: { basePath: string }) {
                   variant="ghost"
                   size="sm"
                   onClick={() => {
+                    setReelCard(item.card);
+                    setReelOpen(true);
+                  }}
+                >
+                  <Play aria-hidden /> Watch
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
                     setSourceCard(item.card);
                     setSourceOpen(true);
                   }}
@@ -227,6 +240,7 @@ export function SavedScreen({ basePath }: { basePath: string }) {
       )}
 
       <SourceDrawer card={sourceCard} open={sourceOpen} onOpenChange={setSourceOpen} />
+      <ReelModal card={reelCard} open={reelOpen} onOpenChange={setReelOpen} />
     </div>
   );
 }

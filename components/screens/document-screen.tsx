@@ -9,6 +9,7 @@ import {
   ExternalLink,
   Layers,
   MessageCircleQuestion,
+  Play,
   RefreshCcw,
   Trash2,
 } from "lucide-react";
@@ -25,6 +26,7 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SourceDrawer } from "@/components/feed/source-drawer";
+import { ReelModal } from "@/components/feed/reel-modal";
 import { documentAccent } from "@/components/screens/library-screen";
 import { useDataProvider } from "@/lib/data/provider-context";
 import {
@@ -52,6 +54,8 @@ export function DocumentScreen({ basePath, documentId }: { basePath: string; doc
   const [deleting, setDeleting] = useState(false);
   const [sourceCard, setSourceCard] = useState<StudyCard | null>(null);
   const [sourceOpen, setSourceOpen] = useState(false);
+  const [reelCard, setReelCard] = useState<StudyCard | null>(null);
+  const [reelOpen, setReelOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -243,7 +247,7 @@ export function DocumentScreen({ basePath, documentId }: { basePath: string; doc
                 <div>
                   <p className="text-sm font-medium">{t.topic}</p>
                   <p className="text-xs text-muted-foreground">
-                    {t.cardCount} card{t.cardCount === 1 ? "" : "s"}
+                    {t.cardCount} reel{t.cardCount === 1 ? "" : "s"}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -260,18 +264,27 @@ export function DocumentScreen({ basePath, documentId }: { basePath: string; doc
 
       {doc.previewCards.length > 0 && (
         <section className="mt-6">
-          <h2 className="font-display text-lg font-semibold">Card preview</h2>
+          <h2 className="font-display text-lg font-semibold">Reel preview</h2>
           <ul className="mt-3 space-y-2">
             {doc.previewCards.map((card) => (
-              <li key={card.id}>
+              <li
+                key={card.id}
+                className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3"
+              >
                 <button
                   type="button"
                   onClick={() => {
-                    setSourceCard(card);
-                    setSourceOpen(true);
+                    setReelCard(card);
+                    setReelOpen(true);
                   }}
-                  className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left hover:bg-surface"
+                  className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
                 >
+                  <span
+                    className="flex size-9 shrink-0 items-center justify-center rounded-full bg-leaf/15 text-leaf"
+                    aria-hidden
+                  >
+                    <Play className="size-4" />
+                  </span>
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">{card.title}</p>
                     <p className="text-xs text-muted-foreground">
@@ -279,7 +292,16 @@ export function DocumentScreen({ basePath, documentId }: { basePath: string; doc
                       {formatPageRange(card.pageStart, card.pageEnd)}
                     </p>
                   </div>
-                  <span className="shrink-0 text-xs text-leaf">View source</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSourceCard(card);
+                    setSourceOpen(true);
+                  }}
+                  className="shrink-0 cursor-pointer text-xs text-leaf hover:underline"
+                >
+                  Source
                 </button>
               </li>
             ))}
@@ -293,7 +315,7 @@ export function DocumentScreen({ basePath, documentId }: { basePath: string; doc
             <DialogTitle>Delete “{doc.title}”?</DialogTitle>
             <DialogDescription>
               This removes the document, its stored source text, and all {doc.cardCount} generated
-              cards. This cannot be undone.
+              reels. This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -308,6 +330,7 @@ export function DocumentScreen({ basePath, documentId }: { basePath: string; doc
       </Dialog>
 
       <SourceDrawer card={sourceCard} open={sourceOpen} onOpenChange={setSourceOpen} />
+      <ReelModal card={reelCard} open={reelOpen} onOpenChange={setReelOpen} />
     </div>
   );
 }

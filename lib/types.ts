@@ -15,7 +15,14 @@ export const DIFFICULTY_ORDER: Record<Difficulty, number> = {
 };
 
 export type DocumentStatus =
-  "queued" | "extracting" | "chunking" | "embedding" | "generating" | "ready" | "failed";
+  | "queued"
+  | "extracting"
+  | "chunking"
+  | "embedding"
+  | "generating"
+  | "rendering"
+  | "ready"
+  | "failed";
 
 export type CardType = "concept" | "key_point" | "example" | "question" | "memory_hook";
 
@@ -86,6 +93,12 @@ export interface StudyCard {
   pageStart: number;
   pageEnd: number;
   createdAt: string;
+  /** The narrated reel rendered for this card. Null only for legacy rows
+   * generated before video rendering existed, or while still processing. */
+  videoDurationSeconds: number | null;
+  /** Spoken narration text (usually the explanation + takeaway), shown as
+   * captions under the reel. */
+  narrationScript: string | null;
 }
 
 export interface CardState {
@@ -170,7 +183,8 @@ export const DOCUMENT_STATUS_LABELS: Record<DocumentStatus, string> = {
   extracting: "Extracting text",
   chunking: "Organizing concepts",
   embedding: "Indexing meaning",
-  generating: "Generating cards",
+  generating: "Writing scripts",
+  rendering: "Rendering reels",
   ready: "Ready",
   failed: "Failed",
 };

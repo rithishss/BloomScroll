@@ -10,7 +10,8 @@ import {
 } from "motion/react";
 import { Bookmark, Check, RotateCcw, SkipForward } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { StudyCardFace } from "@/components/feed/study-card-face";
+import { VideoReelFace } from "@/components/feed/video-reel-face";
+import { useReelMutePreference } from "@/lib/feed/use-reel-mute";
 import type { FeedItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -19,9 +20,96 @@ const SWIPE_VELOCITY = 600;
 const IMPRESSION_DELAY_MS = 700;
 
 export type CardAction = "understood" | "review_again" | "skip";
+type ExitState = { direction: -1 | 0 | 1 } | null;
 
 /**
- * The swipeable stack. One primary card dominates; the next two peek out
+ * One draggable reel. Its drag/rotate/verdict-opacity motion values are
+ * created fresh here rather than hoisted to CardStack: this component
+ * remounts (via the `key={card.id}` on its parent AnimatePresence child)
+ * every time the top card changes, so each card starts at x=0 with no
+ * manual reset. Sharing one motion value across cards at the CardStack
+ * level previously raced the exit animation against a reset effect,
+ * intermittently leaving the next card visually stuck mid-exit-transform.
+ */
+function DraggableReel({
+  item,
+  reducedMotion,
+  exiting,
+  onDragEnd,
+  onAnimationComplete,
+  onViewSource,
+  muted,
+  onToggleMute,
+}: {
+  item: FeedItem;
+  reducedMotion: boolean;
+  exiting: ExitState;
+  onDragEnd: (info: { offset: { x: number }; velocity: { x: number } }) => void;
+  onAnimationComplete: () => void;
+  onViewSource: () => void;
+  muted: boolean;
+  onToggleMute: () => void;
+}) {
+  const x = useMotionValue(0);
+  const rotate = useTransform(x, [-250, 250], [-9, 9]);
+  const gotItOpacity = useTransform(x, [30, SWIPE_DISTANCE], [0, 1]);
+  const reviewOpacity = useTransform(x, [-SWIPE_DISTANCE, -30], [1, 0]);
+
+  return (
+    <motion.div
+      className="absolute inset-0 z-10"
+      style={reducedMotion ? undefined : { x, rotate }}
+      drag={reducedMotion ? false : "x"}
+      dragDirectionLock
+      dragSnapToOrigin
+      dragElastic={0.7}
+      onDragEnd={(_, info) => onDragEnd(info)}
+      initial={reducedMotion ? { opacity: 1 } : { opacity: 0, y: 14, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1, transition: { duration: 0.22 } }}
+      exit={
+        reducedMotion || exiting?.direction === 0
+          ? { opacity: 0, transition: { duration: 0.12 } }
+          : {
+              x: (exiting?.direction ?? 1) * 480,
+              opacity: 0,
+              rotate: (exiting?.direction ?? 1) * 12,
+              transition: { duration: 0.28 },
+            }
+      }
+      onAnimationComplete={onAnimationComplete}
+      whileDrag={{ cursor: "grabbing" }}
+    >
+      {/* Drag verdict overlays */}
+      {!reducedMotion && (
+        <>
+          <motion.div
+            aria-hidden
+            style={{ opacity: gotItOpacity }}
+            className="pointer-events-none absolute left-4 top-4 z-20 rounded-full border-2 border-leaf bg-card px-3 py-1 text-sm font-semibold text-leaf"
+          >
+            Got it
+          </motion.div>
+          <motion.div
+            aria-hidden
+            style={{ opacity: reviewOpacity }}
+            className="pointer-events-none absolute right-4 top-4 z-20 rounded-full border-2 border-blossom bg-card px-3 py-1 text-sm font-semibold text-blossom"
+          >
+            Review again
+          </motion.div>
+        </>
+      )}
+      <VideoReelFace
+        item={item}
+        onViewSource={onViewSource}
+        muted={muted}
+        onToggleMute={onToggleMute}
+      />
+    </motion.div>
+  );
+}
+
+/**
+ * The swipeable stack. One primary reel dominates; the next two peek out
  * behind it. Drag right = "Got it", drag left = "Review again"; every gesture
  * also exists as a visible button and a keyboard shortcut, and swiping is
  * disabled entirely under prefers-reduced-motion.
@@ -43,29 +131,24 @@ export function CardStack({
   onViewSource: (item: FeedItem) => void;
 }) {
   const reducedMotion = useReducedMotion();
+  const [muted, toggleMuted] = useReelMutePreference();
   const top = items[0] ?? null;
   // 0 until the impression effect below stamps the real time for `top`.
   const topSinceRef = useRef<number>(0);
   const impressedRef = useRef<Set<string>>(new Set());
   const [exiting, setExiting] = useState<{ id: string; direction: -1 | 0 | 1 } | null>(null);
 
-  const x = useMotionValue(0);
-  const rotate = useTransform(x, [-250, 250], [-9, 9]);
-  const gotItOpacity = useTransform(x, [30, SWIPE_DISTANCE], [0, 1]);
-  const reviewOpacity = useTransform(x, [-SWIPE_DISTANCE, -30], [1, 0]);
-
   // Impression timing for the current top card.
   useEffect(() => {
     if (!top) return;
     topSinceRef.current = Date.now();
-    x.set(0);
     if (impressedRef.current.has(top.card.id)) return;
     const timer = setTimeout(() => {
       impressedRef.current.add(top.card.id);
       onImpression(top);
     }, IMPRESSION_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [top, onImpression, x]);
+  }, [top, onImpression]);
 
   const act = useCallback(
     (action: CardAction, direction: -1 | 0 | 1) => {
@@ -116,7 +199,7 @@ export function CardStack({
     return () => window.removeEventListener("keydown", onKey);
   }, [top, act, onToggleSave]);
 
-  const handleDragEnd = (_: unknown, info: { offset: { x: number }; velocity: { x: number } }) => {
+  const handleDragEnd = (info: { offset: { x: number }; velocity: { x: number } }) => {
     if (info.offset.x > SWIPE_DISTANCE || info.velocity.x > SWIPE_VELOCITY) {
       act("understood", 1);
     } else if (info.offset.x < -SWIPE_DISTANCE || info.velocity.x < -SWIPE_VELOCITY) {
@@ -128,10 +211,12 @@ export function CardStack({
 
   return (
     <div className="flex w-full flex-col items-center">
-      {/* Scales with viewport height (capped) so the card + controls fit
-          above the fixed mobile nav without scrolling on shorter phones. */}
+      {/* Reels render at 9:16, so the stack is height-driven and portrait —
+          width follows from the aspect ratio. Height scales with viewport
+          (capped) so the reel + controls fit above the fixed mobile nav
+          without scrolling on shorter phones. */}
       <div
-        className="relative h-[48dvh] max-h-[26.5rem] min-h-64 w-full max-w-md sm:max-h-[27.5rem]"
+        className="relative aspect-[9/16] h-[62dvh] max-h-[46rem] min-h-72 w-auto max-w-[22rem] sm:max-h-[42rem] sm:max-w-sm"
         aria-live="polite"
       >
         {/* Peeking next cards */}
@@ -146,57 +231,23 @@ export function CardStack({
               opacity: 0.85 - i * 0.25,
             }}
           >
-            <div className="h-full rounded-2xl border border-border bg-card shadow-soft" />
+            <div className="h-full rounded-2xl border border-white/10 bg-forest shadow-soft" />
           </div>
         ))}
 
         <AnimatePresence mode="popLayout">
           {top ? (
-            <motion.div
+            <DraggableReel
               key={top.card.id}
-              className="absolute inset-0 z-10"
-              style={reducedMotion ? undefined : { x, rotate }}
-              drag={reducedMotion ? false : "x"}
-              dragDirectionLock
-              dragSnapToOrigin
-              dragElastic={0.7}
+              item={top}
+              reducedMotion={!!reducedMotion}
+              exiting={exiting}
               onDragEnd={handleDragEnd}
-              initial={reducedMotion ? { opacity: 1 } : { opacity: 0, y: 14, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1, transition: { duration: 0.22 } }}
-              exit={
-                reducedMotion || exiting?.direction === 0
-                  ? { opacity: 0, transition: { duration: 0.12 } }
-                  : {
-                      x: (exiting?.direction ?? 1) * 480,
-                      opacity: 0,
-                      rotate: (exiting?.direction ?? 1) * 12,
-                      transition: { duration: 0.28 },
-                    }
-              }
               onAnimationComplete={() => setExiting(null)}
-              whileDrag={{ cursor: "grabbing" }}
-            >
-              {/* Drag verdict overlays */}
-              {!reducedMotion && (
-                <>
-                  <motion.div
-                    aria-hidden
-                    style={{ opacity: gotItOpacity }}
-                    className="pointer-events-none absolute left-4 top-4 z-20 rounded-full border-2 border-leaf bg-card px-3 py-1 text-sm font-semibold text-leaf"
-                  >
-                    Got it
-                  </motion.div>
-                  <motion.div
-                    aria-hidden
-                    style={{ opacity: reviewOpacity }}
-                    className="pointer-events-none absolute right-4 top-4 z-20 rounded-full border-2 border-blossom bg-card px-3 py-1 text-sm font-semibold text-blossom"
-                  >
-                    Review again
-                  </motion.div>
-                </>
-              )}
-              <StudyCardFace item={top} onViewSource={() => onViewSource(top)} />
-            </motion.div>
+              onViewSource={() => onViewSource(top)}
+              muted={muted}
+              onToggleMute={toggleMuted}
+            />
           ) : null}
         </AnimatePresence>
       </div>
@@ -217,9 +268,7 @@ export function CardStack({
           size="icon"
           aria-label={saved ? "Remove from saved" : "Save card"}
           aria-pressed={saved}
-          className={cn(
-            saved && "border-pollen bg-pollen/15 text-gold-foreground dark:text-pollen",
-          )}
+          className={cn(saved && "border-pollen bg-pollen/15 text-gold-foreground dark:text-pollen")}
           onClick={() => top && onToggleSave(top)}
           disabled={!top}
         >
