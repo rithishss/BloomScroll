@@ -3,8 +3,8 @@ import { expect, test, type Page } from "@playwright/test";
 /**
  * End-to-end smoke suite for the demo workspace — runs against a production
  * build (see playwright.config.ts), requires no credentials, and covers the
- * full acceptance checklist: landing → demo → feed interactions → saved →
- * source drawer → Ask Bloom → mobile nav → no console errors.
+ * full acceptance checklist: landing → demo → feed interactions in both
+ * faces → saved → source drawer → Ask Bloom → mobile nav → no console errors.
  */
 
 function collectConsoleErrors(page: Page): string[] {
@@ -16,6 +16,14 @@ function collectConsoleErrors(page: Page): string[] {
   return errors;
 }
 
+/** Switches the feed to the reel face and waits for a real video to resolve. */
+async function switchToReels(page: Page) {
+  await page.getByRole("button", { name: "Reels view" }).click();
+  await expect(page.locator("video")).toHaveAttribute("src", /\/demo-videos\/.+\.mp4$/, {
+    timeout: 10_000,
+  });
+}
+
 test("landing page loads with the hero and both CTAs", async ({ page }) => {
   const errors = collectConsoleErrors(page);
   await page.goto("/");
@@ -25,44 +33,108 @@ test("landing page loads with the hero and both CTAs", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-test("entering the demo lands on the feed with a reel visible", async ({ page }) => {
+test("entering the demo lands on the feed showing text cards by default", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("link", { name: /try the interactive demo/i }).click();
   await page.waitForURL(/\/demo\/feed/);
   await expect(page.getByRole("heading", { name: /today's feed/i })).toBeVisible();
-  // The primary reel should resolve to a real, bundled demo video.
-  const video = page.locator("video");
-  await expect(video).toHaveAttribute("src", /\/demo-videos\/.+\.mp4$/, { timeout: 10_000 });
+
+  // Text is the default face: a readable card, and no video element at all.
+  await expect(page.locator("article h2").first()).toBeVisible();
+  await expect(page.locator("video")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Cards view" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
   // Visible interaction controls — gestures are never the only way.
   await expect(page.getByRole("button", { name: /got it/i })).toBeVisible();
   await expect(page.getByRole("button", { name: /review again/i })).toBeVisible();
 });
 
-test("Got it and Review again advance to the next card", async ({ page }) => {
+test("the feed-style toggle swaps the face and persists across a reload", async ({ page }) => {
   await page.goto("/demo/feed");
-  // Each reel's <video> has a unique aria-label ("<title> — narrated reel"),
-  // which is the reliable per-card signal now that titles are baked into
-  // the video frame rather than rendered as HTML text. The exiting and
-  // entering reel briefly coexist during the transition animation, so
-  // .first() (not a bare locator) is used throughout to avoid a strict-mode
+  const cardTitle = await page.locator("article h2").first().textContent();
+
+  await switchToReels(page);
+  await expect(page.getByRole("button", { name: "Reels view" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  // Same card, different face: the reel's accessible name carries the title
+  // that the text face rendered as an <h2>.
+  await expect(page.locator("video").first()).toHaveAttribute(
+    "aria-label",
+    `${cardTitle} — narrated reel`,
+  );
+
+  // The preference survives a full reload.
+  await page.reload();
+  await expect(page.locator("video").first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole("button", { name: "Reels view" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  // ...and switching back restores the text face, again persistently.
+  await page.getByRole("button", { name: "Cards view" }).click();
+  await expect(page.locator("video")).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator("article h2").first()).toBeVisible();
+  await expect(page.locator("video")).toHaveCount(0);
+});
+
+test("text mode requests no video assets at all", async ({ page }) => {
+  const videoRequests: string[] = [];
+  page.on("request", (req) => {
+    if (req.url().includes("/demo-videos/")) videoRequests.push(req.url());
+  });
+  await page.goto("/demo/feed");
+  await expect(page.locator("article h2").first()).toBeVisible();
+  await page.waitForTimeout(1000);
+  expect(videoRequests).toEqual([]);
+});
+
+test("Got it and Review again advance to the next card (text face)", async ({ page }) => {
+  await page.goto("/demo/feed");
+  // The exiting and entering card briefly coexist during the transition
+  // animation, so .first() (not a bare locator) avoids a strict-mode
   // multi-match error.
-  const reelLabel = page.locator("video").first();
-  const firstLabel = await reelLabel.getAttribute("aria-label");
+  const title = page.locator("article h2").first();
+  const firstTitle = await title.textContent();
+
+  await page.getByRole("button", { name: /got it/i }).click();
+  await expect(page.locator("article h2")).toHaveCount(1, { timeout: 5000 });
+  await expect(title).not.toHaveText(firstTitle ?? "", { timeout: 5000 });
+
+  const secondTitle = await title.textContent();
+  await page.getByRole("button", { name: /review again/i }).click();
+  await expect(page.locator("article h2")).toHaveCount(1, { timeout: 5000 });
+  await expect(title).not.toHaveText(secondTitle ?? "", { timeout: 5000 });
+});
+
+test("Got it and Review again advance to the next card (reel face)", async ({ page }) => {
+  await page.goto("/demo/feed");
+  await switchToReels(page);
+  // Each reel's <video> has a unique aria-label ("<title> — narrated reel"),
+  // which is the reliable per-card signal when titles are baked into the
+  // video frame rather than rendered as HTML text.
+  const reel = page.locator("video").first();
+  const firstLabel = await reel.getAttribute("aria-label");
 
   await page.getByRole("button", { name: /got it/i }).click();
   await expect(page.locator("video")).toHaveCount(1, { timeout: 5000 });
-  await expect(reelLabel).not.toHaveAttribute("aria-label", firstLabel ?? "", { timeout: 5000 });
+  await expect(reel).not.toHaveAttribute("aria-label", firstLabel ?? "", { timeout: 5000 });
 
-  const secondLabel = await reelLabel.getAttribute("aria-label");
+  const secondLabel = await reel.getAttribute("aria-label");
   await page.getByRole("button", { name: /review again/i }).click();
   await expect(page.locator("video")).toHaveCount(1, { timeout: 5000 });
-  await expect(reelLabel).not.toHaveAttribute("aria-label", secondLabel ?? "", { timeout: 5000 });
+  await expect(reel).not.toHaveAttribute("aria-label", secondLabel ?? "", { timeout: 5000 });
 });
 
 test("a card can be saved and then appears on the Saved screen", async ({ page }) => {
   await page.goto("/demo/feed");
-  const label = await page.locator("video").first().getAttribute("aria-label");
-  const title = (label ?? "").replace(/ — narrated reel$/, "");
+  const title = (await page.locator("article h2").first().textContent()) ?? "";
 
   await page.getByRole("button", { name: /save card/i }).click();
   await expect(page.getByText(/saved for later/i)).toBeVisible();

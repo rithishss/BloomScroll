@@ -6,23 +6,27 @@ import { toast } from "sonner";
 import { UploadCloud } from "lucide-react";
 import { BloomMark } from "@/components/bloomscroll/bloom-mark";
 import { CardStack, type CardAction } from "@/components/feed/card-stack";
+import { FeedFaceToggle } from "@/components/feed/feed-face-toggle";
 import { SourceDrawer } from "@/components/feed/source-drawer";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDataProvider } from "@/lib/data/provider-context";
+import { useFeedFacePreference } from "@/lib/feed/use-feed-face";
 import type { DocumentSummary, FeedItem, StudyCard } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const SESSION_GOAL = 10;
 
 /**
- * The feed: a personalized, swipeable queue of narrated video reels. Pages
- * are pulled lazily from the provider; reels acted on in this session never
- * reappear until the queue is exhausted and the user explicitly starts a
- * new round.
+ * The feed: a personalized, swipeable queue of study cards, shown either as
+ * text cards or as narrated video reels (the user's choice, persisted).
+ * Pages are pulled lazily from the provider; cards acted on in this session
+ * never reappear until the queue is exhausted and the user explicitly
+ * starts a new round.
  */
 export function FeedScreen({ basePath }: { basePath: string }) {
   const provider = useDataProvider();
+  const [face, setFace] = useFeedFacePreference();
   const [documents, setDocuments] = useState<DocumentSummary[] | null>(null);
   const [filterDocId, setFilterDocId] = useState<string | null>(null);
   const [queue, setQueue] = useState<FeedItem[]>([]);
@@ -165,16 +169,17 @@ export function FeedScreen({ basePath }: { basePath: string }) {
     <div className="bloom-aurora min-h-full">
       <div className="mx-auto flex w-full max-w-3xl flex-col px-4 py-4 sm:py-8">
         <header className="flex items-center justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <h1 className="font-display text-2xl font-semibold">Today&apos;s feed</h1>
             <p className="mt-0.5 text-sm text-muted-foreground">
               {studied === 0
-                ? "Cards picked for you — swipe or use the buttons."
+                ? "Picked for you — swipe or use the buttons."
                 : `${studied} card${studied === 1 ? "" : "s"} studied this session`}
             </p>
           </div>
-          <div className="flex items-center gap-2" aria-hidden>
-            <BloomMark className="size-9 text-leaf" progress={bloomProgress} />
+          <div className="flex shrink-0 items-center gap-2">
+            <FeedFaceToggle face={face} onChange={setFace} />
+            <BloomMark className="hidden size-9 text-leaf sm:block" progress={bloomProgress} />
           </div>
         </header>
 
@@ -231,6 +236,7 @@ export function FeedScreen({ basePath }: { basePath: string }) {
           ) : (
             <CardStack
               items={queue}
+              face={face}
               onAction={handleAction}
               onToggleSave={handleToggleSave}
               onImpression={handleImpression}
@@ -278,7 +284,7 @@ function EmptyFeed({ basePath }: { basePath: string }) {
       <h2 className="font-display mt-4 text-xl font-semibold">Nothing has bloomed yet</h2>
       <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
         Upload a PDF of your notes or a textbook chapter and BloomScroll will turn it into
-        swipeable, source-grounded narrated video reels.
+        swipeable, source-grounded study cards — read them, or watch them as narrated reels.
       </p>
       <Button asChild className="mt-5">
         <Link href={`${basePath}/upload`}>

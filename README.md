@@ -2,7 +2,9 @@
 
 **Turn your notes into a study feed.**
 
-BloomScroll is a full-stack AI study app: upload PDF lecture notes or a textbook chapter, and it turns them into a swipeable feed of short, narrated video reels — concise, source-grounded, and ranked by what you actually need to review, not by upload order. Ask questions across your uploaded material and get answers with page-level citations, never a guess.
+BloomScroll is a full-stack AI study app: upload PDF lecture notes or a textbook chapter, and it turns them into a swipeable feed of short study cards — concise, source-grounded, and ranked by what you actually need to review, not by upload order. Ask questions across your uploaded material and get answers with page-level citations, never a guess.
+
+Each card has **two interchangeable faces over one shared feed engine**: a text card you read, or a narrated video reel you watch. A toggle in the feed header picks between them, and the choice persists. Text is the default — it needs no credentials and no TTS spend; the video pipeline is an optional layer on top of the same cards.
 
 The whole product runs in two modes from one codebase: a **demo workspace** with seeded content (including 23 real, pre-rendered reels) that needs zero credentials, and a **real mode** backed by Supabase (Postgres + pgvector + Auth + Storage) and an OpenAI-compatible chat/embedding/TTS model.
 
@@ -13,21 +15,22 @@ The whole product runs in two modes from one codebase: a **demo workspace** with
 
 ## Screenshots
 
-Run the app locally (see below) and visit `/demo/feed`, `/demo/library`, and `/demo/ask` — the vertical reel feed, the library grid, and Ask Bloom's cited answers are the three views worth a look first.
+Run the app locally (see below) and visit `/demo/feed`, `/demo/library`, and `/demo/ask` — the swipeable feed (try both the Cards and Reels toggle in its header), the library grid, and Ask Bloom's cited answers are the three views worth a look first.
 
 ## Product overview
 
 1. A visitor lands on `/`, and can create an account or jump straight into `/demo`.
 2. New users complete a short onboarding flow (name, topic interests, study goal, preferred difficulty).
-3. They upload a PDF. It's validated, stored privately, and processed through a visible pipeline: extracting → organizing concepts → writing scripts → rendering reels → ready.
-4. Once ready, the document's reels join the personalized feed.
-5. The user studies the feed: each reel is a short narrated video (topic, title, explanation, and an optional takeaway, all baked into the frame and read aloud); swipe or use buttons for "Got it" / "Review again" / "Save"; every action adjusts future ranking and spaced review.
-6. Every reel has a source drawer showing the exact stored excerpt, page number, and (when available) a deep link into the source PDF.
+3. They upload a PDF. It's validated, stored privately, and processed through a visible pipeline: extracting → organizing concepts → writing cards → rendering reels → ready.
+4. Once ready, the document's cards join the personalized feed.
+5. The user studies the feed, in whichever face they prefer: a **text card** (type/topic/difficulty badges, title, explanation, optional example or memory hook) or the same card as a **narrated video reel** (that content baked into the frame and read aloud). Either way, swipe or use buttons for "Got it" / "Review again" / "Save"; every action adjusts future ranking and spaced review identically.
+6. Every card has a source drawer showing the exact stored excerpt, page number, and (when available) a deep link into the source PDF.
 7. Ask Bloom answers questions using only retrieved passages from the user's own documents, with citations — and says so honestly when the material doesn't cover the question.
 
 ## Architecture summary
 
-- **Next.js App Router**, TypeScript strict mode, Tailwind CSS v4, Radix-based UI primitives, Motion for the reel-stack gestures.
+- **Next.js App Router**, TypeScript strict mode, Tailwind CSS v4, Radix-based UI primitives, Motion for the card-stack gestures.
+- **Two card faces, one feed engine.** `components/feed/card-stack.tsx` owns swipe gestures, keyboard shortcuts, impression timing, and mastery actions; it renders either `StudyCardFace` (text) or `VideoReelFace` (narrated mp4) depending on a persisted preference (`lib/feed/use-feed-face.ts`). Adding a face means adding a component, not touching the feed engine.
 - **One domain model, two data providers.** `lib/data/provider.ts` defines a `DataProvider` interface; `lib/demo/provider.ts` implements it over `localStorage`, `lib/data/real-provider.ts` implements it over `/api/*` routes backed by Supabase. Every screen component is written once against the interface and works unmodified in both modes.
 - **Supabase**: Postgres with RLS on every table, pgvector for embeddings, private Storage bucket for PDFs *and* rendered reel `.mp4` files, a SQL RPC (`match_document_chunks`) for ownership-scoped semantic search.
 - **LangChain** (`@langchain/community`, `@langchain/textsplitters`, `@langchain/openai`) for PDF loading, recursive chunking, and embedding/generation orchestration.
@@ -44,7 +47,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000 and click **Try the interactive demo** — no environment variables, no Supabase project, no OpenAI key required. The demo workspace seeds two course documents (Operating Systems, Signals & Systems) with 23 real, pre-rendered narrated reels, realistic mastery/review state, and a lexical (non-AI) Ask Bloom implementation that's honest about what it is: extractive answers over the same seeded text, not a live model call.
+Open http://localhost:3000 and click **Try the interactive demo** — no environment variables, no Supabase project, no OpenAI key required. The demo workspace seeds two course documents (Operating Systems, Signals & Systems) with 23 study cards, realistic mastery/review state, and a lexical (non-AI) Ask Bloom implementation that's honest about what it is: extractive answers over the same seeded text, not a live model call. The feed opens on text cards; flip the header toggle to **Reels** to play the 23 real, pre-rendered narrated videos.
 
 ## Demo-mode setup
 
@@ -162,7 +165,7 @@ npm run start
 1. **Extract** — LangChain's `PDFLoader` extracts text page-by-page (`lib/documents/pdf.ts`), preserving original page numbers and detecting scanned/no-text PDFs honestly.
 2. **Chunk** — `RecursiveCharacterTextSplitter` (`lib/documents/chunking.ts`) splits into ~700–1000 token chunks with ~125 token overlap, mapping each chunk back to the page range its characters came from.
 3. **Embed** — chunks are embedded in batches of 32 with retry/backoff (`lib/documents/job-runner.ts`) and stored in `document_chunks.embedding` (pgvector).
-4. **Generate reel scripts** — the chat model is called with structured-output validation against a Zod schema (`lib/ai/schemas.ts`); each generated card must cite in-range source-chunk indexes, near-duplicates are removed by token-Jaccard similarity, and the stored excerpt is derived from the actual chunk text — never from the model's own words.
+4. **Generate cards** — the chat model is called with structured-output validation against a Zod schema (`lib/ai/schemas.ts`); each generated card must cite in-range source-chunk indexes, near-duplicates are removed by token-Jaccard similarity, and the stored excerpt is derived from the actual chunk text — never from the model's own words.
 5. **Render reels** — see the video-rendering pipeline below.
 6. **Ask Bloom** — the question is embedded, `match_document_chunks` retrieves the top ~8 owned chunks above a similarity threshold, a lightweight rerank caps any one document at 3 chunks for diversity, and the model answers strictly from that context — with `insufficient_evidence: true` returned honestly when the retrieved chunks don't support an answer.
 
@@ -180,15 +183,15 @@ Each generated card becomes one narrated reel:
 
 ## Feed ranking explanation
 
-Every candidate reel scores in `[0, 1]`:
+Every candidate card scores in `[0, 1]`:
 
 ```
 score = 0.30 · topicRelevance   (explicit onboarding weight + learned interest)
       + 0.22 · reviewUrgency    (mastery gap × how overdue the spaced review is)
-      + 0.18 · novelty          (unseen reels first, then 1/(1+timesSeen))
+      + 0.18 · novelty          (unseen cards first, then 1/(1+timesSeen))
       + 0.12 · engagement       (recent saves/opens/dwell for the topic)
       + 0.10 · difficultyFit    (distance from the user's preferred difficulty)
       + 0.08 · exploration      (deterministic hash of user+day+cardId)
 ```
 
-A diversity pass then orders candidates so that a third consecutive reel from the same topic or document is only allowed when literally no alternative remains in the candidate pool — implemented as a hard filter rather than a score penalty, since a fixed penalty can always be outweighed by a strong enough preference gap (see the comment in `lib/feed/ranking.ts` for the reasoning and the edge case that motivated it). "Got it" raises mastery and schedules a farther-out review on an expanding ladder (4h → 30d); "Review again" cuts mastery and schedules a 10-minute near-term review; rapid skips (<1.5s dwell) suppress a topic for 30 minutes without permanently hiding it. The full formula, mastery/scheduling rules, and diversity logic are unit-tested in `tests/unit/ranking.test.ts` and `tests/unit/mastery.test.ts`.
+A diversity pass then orders candidates so that a third consecutive card from the same topic or document is only allowed when literally no alternative remains in the candidate pool — implemented as a hard filter rather than a score penalty, since a fixed penalty can always be outweighed by a strong enough preference gap (see the comment in `lib/feed/ranking.ts` for the reasoning and the edge case that motivated it). "Got it" raises mastery and schedules a farther-out review on an expanding ladder (4h → 30d); "Review again" cuts mastery and schedules a 10-minute near-term review; rapid skips (<1.5s dwell) suppress a topic for 30 minutes without permanently hiding it. The full formula, mastery/scheduling rules, and diversity logic are unit-tested in `tests/unit/ranking.test.ts` and `tests/unit/mastery.test.ts`.

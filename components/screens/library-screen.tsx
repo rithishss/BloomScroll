@@ -192,7 +192,7 @@ export function LibraryScreen({ basePath }: { basePath: string }) {
             <DialogTitle>Delete “{deleteTarget?.title}”?</DialogTitle>
             <DialogDescription>
               This removes the document, its stored source text, and all{" "}
-              {deleteTarget?.cardCount ?? 0} generated reels. This cannot be undone.
+              {deleteTarget?.cardCount ?? 0} generated cards. This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -281,7 +281,7 @@ function DocumentCard({
 
         <div className="mt-auto flex items-center justify-between pt-4 text-xs text-muted-foreground">
           <span>
-            {doc.cardCount} reel{doc.cardCount === 1 ? "" : "s"}
+            {doc.cardCount} card{doc.cardCount === 1 ? "" : "s"}
           </span>
           <span>Last studied {formatRelativeTime(doc.lastStudiedAt)}</span>
         </div>

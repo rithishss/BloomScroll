@@ -10,8 +10,10 @@ import {
 } from "motion/react";
 import { Bookmark, Check, RotateCcw, SkipForward } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { StudyCardFace } from "@/components/feed/study-card-face";
 import { VideoReelFace } from "@/components/feed/video-reel-face";
 import { useReelMutePreference } from "@/lib/feed/use-reel-mute";
+import type { FeedFace } from "@/lib/feed/use-feed-face";
 import type { FeedItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -22,8 +24,27 @@ const IMPRESSION_DELAY_MS = 700;
 export type CardAction = "understood" | "review_again" | "skip";
 type ExitState = { direction: -1 | 0 | 1 } | null;
 
+/** Both faces occupy the same swipe frame, but they want different shapes. */
+const FACE_FRAME_CLASS: Record<FeedFace, string> = {
+  // Text cards are width-driven: a comfortable reading measure, with height
+  // capped so the card plus its controls clear the fixed mobile nav.
+  text: "h-[48dvh] max-h-[26.5rem] min-h-64 w-full max-w-md sm:max-h-[27.5rem]",
+  // Reels render at 9:16, so the frame is height-driven and portrait —
+  // width follows from the aspect ratio. Height scales with viewport
+  // (capped) so the reel + controls fit above the fixed mobile nav
+  // without scrolling on shorter phones.
+  video:
+    "aspect-[9/16] h-[62dvh] max-h-[46rem] min-h-72 w-auto max-w-[22rem] sm:max-h-[42rem] sm:max-w-sm",
+};
+
+/** The peeked cards behind the top one echo that face's own surface. */
+const FACE_PEEK_CLASS: Record<FeedFace, string> = {
+  text: "border-border bg-card",
+  video: "border-white/10 bg-forest",
+};
+
 /**
- * One draggable reel. Its drag/rotate/verdict-opacity motion values are
+ * One draggable card. Its drag/rotate/verdict-opacity motion values are
  * created fresh here rather than hoisted to CardStack: this component
  * remounts (via the `key={card.id}` on its parent AnimatePresence child)
  * every time the top card changes, so each card starts at x=0 with no
@@ -31,8 +52,9 @@ type ExitState = { direction: -1 | 0 | 1 } | null;
  * level previously raced the exit animation against a reset effect,
  * intermittently leaving the next card visually stuck mid-exit-transform.
  */
-function DraggableReel({
+function DraggableCard({
   item,
+  face,
   reducedMotion,
   exiting,
   onDragEnd,
@@ -42,6 +64,7 @@ function DraggableReel({
   onToggleMute,
 }: {
   item: FeedItem;
+  face: FeedFace;
   reducedMotion: boolean;
   exiting: ExitState;
   onDragEnd: (info: { offset: { x: number }; velocity: { x: number } }) => void;
@@ -98,33 +121,43 @@ function DraggableReel({
           </motion.div>
         </>
       )}
-      <VideoReelFace
-        item={item}
-        onViewSource={onViewSource}
-        muted={muted}
-        onToggleMute={onToggleMute}
-      />
+      {face === "video" ? (
+        <VideoReelFace
+          item={item}
+          onViewSource={onViewSource}
+          muted={muted}
+          onToggleMute={onToggleMute}
+        />
+      ) : (
+        <StudyCardFace item={item} onViewSource={onViewSource} />
+      )}
     </motion.div>
   );
 }
 
 /**
- * The swipeable stack. One primary reel dominates; the next two peek out
+ * The swipeable stack. One primary card dominates; the next two peek out
  * behind it. Drag right = "Got it", drag left = "Review again"; every gesture
  * also exists as a visible button and a keyboard shortcut, and swiping is
  * disabled entirely under prefers-reduced-motion.
+ *
+ * `face` swaps only what fills the frame — text card or narrated reel. The
+ * gestures, keyboard shortcuts, impression timing, mastery actions, and save
+ * behaviour are identical either way.
  *
  * Impressions fire once per card, only after the card has been the top of
  * the stack for IMPRESSION_DELAY_MS — never on mere render.
  */
 export function CardStack({
   items,
+  face,
   onAction,
   onToggleSave,
   onImpression,
   onViewSource,
 }: {
   items: FeedItem[];
+  face: FeedFace;
   onAction: (item: FeedItem, action: CardAction, dwellMs: number) => void;
   onToggleSave: (item: FeedItem) => void;
   onImpression: (item: FeedItem) => void;
@@ -211,14 +244,7 @@ export function CardStack({
 
   return (
     <div className="flex w-full flex-col items-center">
-      {/* Reels render at 9:16, so the stack is height-driven and portrait —
-          width follows from the aspect ratio. Height scales with viewport
-          (capped) so the reel + controls fit above the fixed mobile nav
-          without scrolling on shorter phones. */}
-      <div
-        className="relative aspect-[9/16] h-[62dvh] max-h-[46rem] min-h-72 w-auto max-w-[22rem] sm:max-h-[42rem] sm:max-w-sm"
-        aria-live="polite"
-      >
+      <div className={cn("relative", FACE_FRAME_CLASS[face])} aria-live="polite">
         {/* Peeking next cards */}
         {items.slice(1, 3).map((item, i) => (
           <div
@@ -231,15 +257,16 @@ export function CardStack({
               opacity: 0.85 - i * 0.25,
             }}
           >
-            <div className="h-full rounded-2xl border border-white/10 bg-forest shadow-soft" />
+            <div className={cn("h-full rounded-2xl border shadow-soft", FACE_PEEK_CLASS[face])} />
           </div>
         ))}
 
         <AnimatePresence mode="popLayout">
           {top ? (
-            <DraggableReel
+            <DraggableCard
               key={top.card.id}
               item={top}
+              face={face}
               reducedMotion={!!reducedMotion}
               exiting={exiting}
               onDragEnd={handleDragEnd}

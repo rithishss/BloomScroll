@@ -44,8 +44,8 @@ export default function LandingPage() {
               </h1>
               <p className="mt-5 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
                 Upload your course material and BloomScroll transforms it into concise,
-                source-grounded video reels that adapt to what you understand and what needs
-                another look.
+                source-grounded cards that adapt to what you understand and what needs another
+                look — read them, or watch them as narrated reels.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <Button asChild size="lg">
@@ -83,12 +83,12 @@ export default function LandingPage() {
                 {
                   step: "02",
                   title: "Bloom",
-                  body: "AI writes a script grounded in your material — concept, key point, example, question, or memory hook — then narrates and renders it as a short vertical reel, tied to the exact page it came from.",
+                  body: "AI distills your material into short cards — concept, key point, example, question, or memory hook — each tied to the exact page it came from, and each also narrated and rendered as a short vertical reel.",
                 },
                 {
                   step: "03",
                   title: "Remember",
-                  body: "Swipe through a feed that learns with you. “Got it” schedules spaced reviews; “Review again” brings a reel back soon.",
+                  body: "Swipe through a feed that learns with you — reading the cards or watching the reels, your choice. “Got it” schedules spaced reviews; “Review again” brings a card back soon.",
                 },
               ].map((item) => (
                 <div
@@ -112,14 +112,15 @@ export default function LandingPage() {
                 <Fingerprint className="size-4" aria-hidden /> Grounded by design
               </p>
               <h2 className="font-display mt-3 text-3xl font-semibold">
-                Every reel can prove where it came from
+                Every card can prove where it came from
               </h2>
               <p className="mt-4 max-w-lg text-sm leading-relaxed text-muted-foreground sm:text-base">
                 BloomScroll uses retrieval-augmented generation: your PDF is split into passages,
-                embedded, and searched semantically. Reel scripts and answers are generated
-                strictly from retrieved passages — and each reel carries a citation to the exact
-                page. Open the source drawer on any reel to read the original text. When your
-                material doesn&apos;t contain an answer, Bloom says so instead of guessing.
+                embedded, and searched semantically. Cards, their narration, and Ask Bloom&apos;s
+                answers are generated strictly from retrieved passages — and each carries a
+                citation to the exact page. Open the source drawer anywhere to read the original
+                text. When your material doesn&apos;t contain an answer, Bloom says so instead of
+                guessing.
               </p>
             </div>
             <div className="rounded-2xl border border-border bg-card p-6 shadow-card">
@@ -138,7 +139,7 @@ export default function LandingPage() {
               </div>
               <div className="mt-5 rounded-xl bg-surface px-4 py-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Becomes this reel
+                  Becomes this card
                 </p>
                 <p className="font-display mt-1.5 text-base font-semibold">
                   Why does SJF minimize average waiting time?
@@ -159,10 +160,10 @@ export default function LandingPage() {
                 Ranked by what you need, not when it was made
               </h2>
               <p className="mt-4 text-sm leading-relaxed text-muted-foreground sm:text-base">
-                Every reel is scored on topic interest, review urgency, novelty, engagement, and
+                Every card is scored on topic interest, review urgency, novelty, engagement, and
                 difficulty fit — with a dash of deterministic exploration. Mastery grows when you
-                nail a reel and reviews are spaced further apart; stumble, and it returns sooner. A
-                small &ldquo;Why this reel?&rdquo; note explains every pick.
+                nail a card and reviews are spaced further apart; stumble, and it returns sooner. A
+                small &ldquo;Why this card?&rdquo; note explains every pick.
               </p>
             </div>
             <div className="mt-10 grid gap-4 sm:grid-cols-3">

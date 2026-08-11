@@ -319,7 +319,7 @@ export function SettingsScreen({ basePath }: { basePath: string }) {
             <DialogDescription>
               {isDemo
                 ? "Saved cards, mastery, and demo uploads in this browser will be cleared and the seeded content restored."
-                : "All documents, generated reels, study history, and files will be permanently removed."}
+                : "All documents, generated cards, study history, and files will be permanently removed."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

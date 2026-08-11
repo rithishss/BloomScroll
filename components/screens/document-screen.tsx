@@ -247,7 +247,7 @@ export function DocumentScreen({ basePath, documentId }: { basePath: string; doc
                 <div>
                   <p className="text-sm font-medium">{t.topic}</p>
                   <p className="text-xs text-muted-foreground">
-                    {t.cardCount} reel{t.cardCount === 1 ? "" : "s"}
+                    {t.cardCount} card{t.cardCount === 1 ? "" : "s"}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -264,7 +264,7 @@ export function DocumentScreen({ basePath, documentId }: { basePath: string; doc
 
       {doc.previewCards.length > 0 && (
         <section className="mt-6">
-          <h2 className="font-display text-lg font-semibold">Reel preview</h2>
+          <h2 className="font-display text-lg font-semibold">Card preview</h2>
           <ul className="mt-3 space-y-2">
             {doc.previewCards.map((card) => (
               <li
@@ -315,7 +315,7 @@ export function DocumentScreen({ basePath, documentId }: { basePath: string; doc
             <DialogTitle>Delete “{doc.title}”?</DialogTitle>
             <DialogDescription>
               This removes the document, its stored source text, and all {doc.cardCount} generated
-              reels. This cannot be undone.
+              cards. This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
