@@ -1,11 +1,25 @@
 import { describe, expect, it } from "vitest";
 import {
   cardBatchSchema,
+  generatedQuizQuestionSchema,
+  hasDistinctOptions,
   cardSimilarity,
   dedupeCards,
   generatedCardSchema,
   validateChunkIndexes,
 } from "@/lib/ai/schemas";
+
+function validQuizQuestion(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    topic: "CPU Scheduling",
+    question: "Why does SJF minimize average waiting time?",
+    options: ["Exchange argument", "Round robin", "Equal slices", "Arrival order"],
+    correct_index: 0,
+    rationale: "Swapping a shorter job earlier reduces total waiting time.",
+    source_chunk_index: 0,
+    ...overrides,
+  };
+}
 
 function validCard(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -65,6 +79,60 @@ describe("cardBatchSchema", () => {
 
   it("rejects an empty batch", () => {
     expect(cardBatchSchema.safeParse({ cards: [] }).success).toBe(false);
+  });
+
+  it("accepts a batch with no quiz key and defaults it to an empty array", () => {
+    const result = cardBatchSchema.safeParse({ cards: [validCard()] });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.quiz).toEqual([]);
+  });
+
+  it("accepts a batch carrying quiz questions", () => {
+    const result = cardBatchSchema.safeParse({ cards: [validCard()], quiz: [validQuizQuestion()] });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.quiz).toHaveLength(1);
+  });
+});
+
+describe("generatedQuizQuestionSchema", () => {
+  it("accepts a well-formed question", () => {
+    expect(generatedQuizQuestionSchema.safeParse(validQuizQuestion()).success).toBe(true);
+  });
+
+  it("requires exactly four options", () => {
+    expect(
+      generatedQuizQuestionSchema.safeParse(validQuizQuestion({ options: ["a", "b", "c"] })).success,
+    ).toBe(false);
+    expect(
+      generatedQuizQuestionSchema.safeParse(validQuizQuestion({ options: ["a", "b", "c", "d", "e"] }))
+        .success,
+    ).toBe(false);
+  });
+
+  it("rejects a correct_index outside the option range", () => {
+    expect(generatedQuizQuestionSchema.safeParse(validQuizQuestion({ correct_index: 4 })).success).toBe(
+      false,
+    );
+    expect(
+      generatedQuizQuestionSchema.safeParse(validQuizQuestion({ correct_index: -1 })).success,
+    ).toBe(false);
+  });
+
+  it("rejects a negative source_chunk_index", () => {
+    expect(
+      generatedQuizQuestionSchema.safeParse(validQuizQuestion({ source_chunk_index: -1 })).success,
+    ).toBe(false);
+  });
+});
+
+describe("hasDistinctOptions", () => {
+  it("accepts four genuinely different options", () => {
+    expect(hasDistinctOptions({ options: ["a", "b", "c", "d"] })).toBe(true);
+  });
+
+  it("rejects duplicates, ignoring case and surrounding whitespace", () => {
+    expect(hasDistinctOptions({ options: ["a", "A", "c", "d"] })).toBe(false);
+    expect(hasDistinctOptions({ options: ["a", " a ", "c", "d"] })).toBe(false);
   });
 });
 

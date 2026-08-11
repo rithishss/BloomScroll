@@ -81,6 +81,23 @@ type StudyCardRow = {
   created_at: string;
 };
 
+type QuizQuestionRow = {
+  id: string;
+  document_id: string;
+  user_id: string;
+  topic: string;
+  question: string;
+  options: string[];
+  correct_index: number;
+  rationale: string;
+  source_chunk_id: string | null;
+  source_excerpt: string;
+  page_start: number;
+  page_end: number;
+  position: number;
+  created_at: string;
+};
+
 type CardEventRow = {
   id: string;
   user_id: string;
@@ -157,6 +174,20 @@ export type Database = {
         | "title"
         | "explanation"
         | "difficulty"
+        | "source_excerpt"
+        | "page_start"
+        | "page_end",
+        "id" | "created_at"
+      >;
+      quiz_questions: TableDef<
+        QuizQuestionRow,
+        | "document_id"
+        | "user_id"
+        | "topic"
+        | "question"
+        | "options"
+        | "correct_index"
+        | "rationale"
         | "source_excerpt"
         | "page_start"
         | "page_end",

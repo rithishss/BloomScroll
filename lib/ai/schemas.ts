@@ -35,11 +35,47 @@ export const generatedCardSchema = z.object({
 
 export type GeneratedCard = z.infer<typeof generatedCardSchema>;
 
+/**
+ * One multiple-choice quiz question. Generated in the *same* model call as
+ * the cards (see cardBatchSchema) so both are grounded in the same set of
+ * retrieved passages, and cites its supporting chunk by index for the same
+ * anti-fabrication reason as cards.
+ */
+export const generatedQuizQuestionSchema = z.object({
+  topic: z.string().min(2).max(60),
+  question: z.string().min(8).max(300),
+  options: z.array(z.string().min(1).max(220)).length(4),
+  correct_index: z.number().int().min(0).max(3),
+  /** Why the correct option is correct — shown after answering. */
+  rationale: z.string().min(10).max(400),
+  source_chunk_index: z
+    .number()
+    .int()
+    .nonnegative()
+    .describe("Index into the provided chunk list that supports this question"),
+});
+
+export type GeneratedQuizQuestion = z.infer<typeof generatedQuizQuestionSchema>;
+
 export const cardBatchSchema = z.object({
   cards: z.array(generatedCardSchema).min(1).max(40),
+  // Optional so a model that omits the key (or returns an unusable quiz)
+  // still yields a perfectly good set of cards rather than failing the
+  // whole batch — the quiz is an addition to a document, not a gate on it.
+  quiz: z
+    .array(generatedQuizQuestionSchema)
+    .max(15)
+    .default([])
+    .describe("Roughly one question per three cards"),
 });
 
 export type CardBatch = z.infer<typeof cardBatchSchema>;
+
+/** Distinct options are what make a multiple-choice question answerable. */
+export function hasDistinctOptions(question: Pick<GeneratedQuizQuestion, "options">): boolean {
+  const normalized = question.options.map((o) => o.trim().toLowerCase());
+  return new Set(normalized).size === normalized.length;
+}
 
 /** RAG answer: citations are also index-based for the same reason. */
 export const askAnswerSchema = z.object({

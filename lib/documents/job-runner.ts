@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database/types";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getEmbeddings, toVectorLiteral } from "@/lib/ai/models";
-import { generateStudyCards } from "@/lib/ai/generate-cards";
+import { generateStudyContent } from "@/lib/ai/generate-cards";
 import { extractPdfPages, PdfExtractionError } from "@/lib/documents/pdf";
 import { renderSlidePng } from "@/lib/video/slide";
 import { synthesizeNarration } from "@/lib/video/tts";
@@ -80,6 +80,12 @@ function buildDb(admin: AdminClient, userId: string, documentId: string): Pipeli
         .eq("document_id", documentId)
         .eq("user_id", userId);
       if (cards.error) throw new Error(`card cleanup failed: ${cards.error.message}`);
+      const quiz = await admin
+        .from("quiz_questions")
+        .delete()
+        .eq("document_id", documentId)
+        .eq("user_id", userId);
+      if (quiz.error) throw new Error(`quiz cleanup failed: ${quiz.error.message}`);
       const chunks = await admin
         .from("document_chunks")
         .delete()
@@ -132,6 +138,26 @@ function buildDb(admin: AdminClient, userId: string, documentId: string): Pipeli
       // Postgres preserves array order through a single INSERT ... RETURNING,
       // so this lines up positionally with the `cards` array the pipeline passed in.
       return (data ?? []).map((row) => ({ id: row.id }));
+    },
+    async insertQuizQuestions(documentId, questions) {
+      if (questions.length === 0) return;
+      const { error } = await admin.from("quiz_questions").insert(
+        questions.map((q, index) => ({
+          document_id: documentId,
+          user_id: userId,
+          topic: q.topic,
+          question: q.question,
+          options: q.options,
+          correct_index: q.correct_index,
+          rationale: q.rationale,
+          source_chunk_id: q.sourceChunkId || null,
+          source_excerpt: q.sourceExcerpt,
+          page_start: q.pageStart,
+          page_end: q.pageEnd,
+          position: index,
+        })),
+      );
+      if (error) throw new Error(`quiz insert failed: ${error.message}`);
     },
     async saveCardVideo(cardId, video) {
       const storagePath = `${userId}/${documentId}/reels/${cardId}.mp4`;
@@ -246,7 +272,7 @@ export async function runIngestion(
       }
     },
     embedTexts: embedWithRetries,
-    generateCards: generateStudyCards,
+    generateContent: generateStudyContent,
     renderVideo: renderVideoWithRetries,
   };
 

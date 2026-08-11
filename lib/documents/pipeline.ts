@@ -1,6 +1,11 @@
 import type { PageText } from "@/lib/documents/normalize";
 import { chunkPages, type ChunkWithPages } from "@/lib/documents/chunking";
-import type { GeneratedCardWithSource, GenerationChunk } from "@/lib/ai/generate-cards";
+import type {
+  GeneratedCardWithSource,
+  GeneratedContent,
+  GeneratedQuizQuestionWithSource,
+  GenerationChunk,
+} from "@/lib/ai/generate-cards";
 
 /**
  * The ingestion pipeline as a pure orchestration over injected dependencies.
@@ -43,6 +48,10 @@ export interface PipelineDb {
   ): Promise<{ id: string; chunkIndex: number }[]>;
   /** Returns the inserted rows' ids in the same order as the input cards. */
   insertCards(documentId: string, cards: GeneratedCardWithSource[]): Promise<{ id: string }[]>;
+  insertQuizQuestions(
+    documentId: string,
+    questions: GeneratedQuizQuestionWithSource[],
+  ): Promise<void>;
   /** Uploads the rendered mp4 to storage and records its path/duration/script on the card. */
   saveCardVideo(cardId: string, video: RenderedVideo): Promise<void>;
 }
@@ -53,7 +62,8 @@ export interface PipelineDeps {
   extractPages(data: Blob): Promise<{ pages: PageText[]; pageCount: number }>;
   /** Batched with retries by the implementation. */
   embedTexts(texts: string[]): Promise<number[][]>;
-  generateCards(chunks: GenerationChunk[]): Promise<GeneratedCardWithSource[]>;
+  /** Produces the document's cards and its quiz in a single pass. */
+  generateContent(chunks: GenerationChunk[]): Promise<GeneratedContent>;
   /** Renders one narrated reel (slide + TTS + ffmpeg compose) for a card. */
   renderVideo(card: GeneratedCardWithSource, documentTitle: string): Promise<RenderedVideo>;
 }
@@ -66,7 +76,7 @@ export class PipelineUserError extends Error {
 }
 
 export type PipelineResult =
-  | { status: "ready"; chunkCount: number; cardCount: number }
+  | { status: "ready"; chunkCount: number; cardCount: number; quizCount: number }
   | { status: "already_processing" }
   | { status: "failed"; message: string };
 
@@ -132,14 +142,17 @@ export async function processDocument(
       pageEnd: chunk.pageEnd,
     }));
 
-    const cards = await deps.generateCards(generationChunks);
+    const { cards, quiz } = await deps.generateContent(generationChunks);
     if (cards.length === 0) {
       throw new PipelineUserError(
-        "Script generation produced no valid cards for this document. Try reprocessing.",
+        "Generation produced no valid cards for this document. Try reprocessing.",
       );
     }
     await db.updateDocument(documentId, { status: "rendering", processingProgress: 78 });
     const insertedCards = await db.insertCards(documentId, cards);
+    // A document with cards but no usable quiz is still a good document, so
+    // an empty quiz is stored as-is rather than failing the run.
+    await db.insertQuizQuestions(documentId, quiz);
 
     // Render one narrated reel per card. Sequential, not parallel: ffmpeg
     // and TTS are both CPU/rate-limit sensitive, and progress needs to
@@ -154,7 +167,12 @@ export async function processDocument(
     }
 
     await db.updateDocument(documentId, { status: "ready", processingProgress: 100 });
-    return { status: "ready", chunkCount: chunks.length, cardCount: cards.length };
+    return {
+      status: "ready",
+      chunkCount: chunks.length,
+      cardCount: cards.length,
+      quizCount: quiz.length,
+    };
   } catch (err) {
     const userMessage =
       err instanceof PipelineUserError

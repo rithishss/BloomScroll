@@ -8,6 +8,7 @@ import {
   ArrowLeft,
   ExternalLink,
   Layers,
+  ListChecks,
   MessageCircleQuestion,
   Play,
   RefreshCcw,
@@ -209,6 +210,13 @@ export function DocumentScreen({ basePath, documentId }: { basePath: string; doc
                   </Link>
                 </Button>
               </>
+            )}
+            {doc.quizCount > 0 && (
+              <Button asChild variant="outline" size="sm">
+                <Link href={`${basePath}/library/${doc.id}/quiz`}>
+                  <ListChecks aria-hidden /> Take the quiz ({doc.quizCount})
+                </Link>
+              </Button>
             )}
             <Button variant="outline" size="sm" onClick={handleOpenPdf}>
               <ExternalLink aria-hidden /> View PDF

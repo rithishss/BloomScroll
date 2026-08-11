@@ -9,9 +9,10 @@
 5. [PDF ingestion pipeline](#pdf-ingestion-pipeline)
 6. [Video-rendering pipeline](#video-rendering-pipeline)
 7. [RAG: Ask Bloom](#rag-ask-bloom)
-8. [Feed ranking](#feed-ranking)
-9. [Auth and security](#auth-and-security)
-10. [Reliability and performance](#reliability-and-performance)
+8. [Quizzes](#quizzes)
+9. [Feed ranking](#feed-ranking)
+10. [Auth and security](#auth-and-security)
+11. [Reliability and performance](#reliability-and-performance)
 
 ## Two modes, one domain model
 
@@ -63,6 +64,8 @@ app/
   app/                     authenticated route tree (RealProvider), server-gated
   api/                     route handlers — one per resource, Zod-validated
     cards/[cardId]/video-url/   signed URL for a card's rendered reel
+    documents/[id]/quiz/        the document's generated quiz
+    quiz/result/                feeds missed topics back into ranking
 components/
   bloomscroll/             brand: BloomMark (original SVG), Wordmark, DemoBadge
   shell/                   AppShell (sidebar+mobile nav), search command palette, theme toggle
@@ -79,6 +82,7 @@ lib/
   demo/                    seed content, storage, lexical retrieval, DemoProvider
   documents/                normalize, chunking, pdf extraction, pipeline, job-runner
   ai/                      models (provider abstraction), prompts, schemas, generate-cards, ask
+  quiz/                    scoring.ts (pure scoring, retry-set, headline)
   video/                   slide.ts (SVG→PNG), tts.ts, compose.ts (ffmpeg), narration.ts
   feed/                    ranking.ts, mastery.ts, use-feed-face.ts, use-reel-mute.ts
   api/                     server-side services used by route handlers (feed/events/documents), auth guard, rate limiting, typed errors
@@ -86,7 +90,7 @@ lib/
   supabase/                server/browser/admin client factories
   validation/               Zod schemas for uploads and API inputs
 supabase/
-  migrations/               00001_schema.sql .. 00004_video_reels.sql
+  migrations/               00001_schema.sql .. 00005_quiz.sql
 tests/
   unit/, integration/, e2e/
 scripts/
@@ -98,7 +102,7 @@ Domain logic never lives in page components — pages are thin wrappers that mou
 
 ## Database schema
 
-Nine tables (see `supabase/migrations/00001_schema.sql` for full DDL, comments, and indexes; `00004_video_reels.sql` for the reel columns added afterward):
+Ten tables (see `supabase/migrations/00001_schema.sql` for full DDL, comments, and indexes; `00004_video_reels.sql` for the reel columns and `00005_quiz.sql` for the quiz table, both added afterward):
 
 | Table | Purpose |
 |---|---|
@@ -106,6 +110,7 @@ Nine tables (see `supabase/migrations/00001_schema.sql` for full DDL, comments, 
 | `topic_preferences` | explicit (onboarding/settings) + learned (from behavior) weight per topic |
 | `documents` | one row per upload; status/progress drive the visible processing timeline (`queued → extracting → chunking → embedding → generating → rendering → ready`) |
 | `document_chunks` | chunked source text + `vector(1536)` embedding + page range |
+| `quiz_questions` | per-document multiple-choice questions (4 options + `correct_index`), each with `source_chunk_id`, a denormalized `source_excerpt`, and a page range so a wrong answer can show its passage |
 | `study_cards` | generated cards; `source_chunk_ids` + `source_excerpt` + page range for citations, plus `video_storage_path` / `video_duration_seconds` / `narration_script` for the rendered reel |
 | `card_events` | append-only interaction log (impression, understood, review_again, save, unsave, source_open, skip) |
 | `card_states` | one row per (user, card): mastery, times seen, next review, saved flag |
@@ -127,7 +132,7 @@ Real code, not a mock behind a button. Flow (`lib/documents/pipeline.ts`'s `proc
 4. **Normalize** (`lib/documents/normalize.ts`) — strips control characters and collapses whitespace without touching math notation or Unicode symbols; drops empty pages while preserving their original page numbers.
 5. **Chunk** (`lib/documents/chunking.ts`) — `RecursiveCharacterTextSplitter`, ~3600 chars (≈900 tokens) with ~500 char (≈125 token) overlap; each chunk is mapped back to the page span its characters came from.
 6. **Embed** — batches of 32 texts, 3 retries with exponential backoff (`lib/documents/job-runner.ts`).
-7. **Generate cards** (`lib/ai/generate-cards.ts`) — structured output validated against `cardBatchSchema` (Zod); every card's `source_chunk_indexes` must reference chunks actually provided in the prompt (`validateChunkIndexes`); near-duplicates removed via token-Jaccard similarity (`dedupeCards`, threshold 0.6); the stored `sourceExcerpt` is derived from the real chunk text, not the model's output. Up to 3 attempts with backoff before the document is marked `failed` with a useful message.
+7. **Generate cards and quiz** (`lib/ai/generate-cards.ts`) — one model call produces both, so the quiz is grounded in exactly the passages the cards came from. Quiz questions are filtered (in-range citation, distinct options) rather than allowed to fail the batch; an empty quiz is stored as an empty quiz. — structured output validated against `cardBatchSchema` (Zod); every card's `source_chunk_indexes` must reference chunks actually provided in the prompt (`validateChunkIndexes`); near-duplicates removed via token-Jaccard similarity (`dedupeCards`, threshold 0.6); the stored `sourceExcerpt` is derived from the real chunk text, not the model's output. Up to 3 attempts with backoff before the document is marked `failed` with a useful message.
 8. **Render reels** — one narrated video per card, sequentially (see [Video-rendering pipeline](#video-rendering-pipeline)); progress advances per card. A card whose render exhausts its own retries fails the whole document with a message naming that card, rather than silently shipping a card that can be read but never watched.
 9. **Ready** — progress hits 100, cards are queryable and their reels playable.
 
@@ -160,6 +165,18 @@ Playback is on-demand and short-lived: `VideoReelFace` and `ReelModal` call `get
 Both the card-generation and Ask Bloom system prompts (`lib/ai/prompts.ts`) include an explicit guardrail: text inside uploaded documents is untrusted content, and any text that looks like an instruction to the model is just content to study, never a command to follow.
 
 Only the retrieved chunks are ever sent to the model — never the full PDF, and never all of a document's chunks.
+
+## Quizzes
+
+Each document gets a multiple-choice quiz generated **in the same model call as its cards** (`cardBatchSchema` carries both `cards` and `quiz`), so the questions are grounded in exactly the passages the cards came from rather than a separate, possibly-divergent retrieval pass. Target is roughly one question per three cards, clamped to 5–12.
+
+Each question stores four options, a `correct_index`, a one-or-two-sentence rationale, and — denormalized alongside the FK to its source chunk — the `source_excerpt` and page range. That denormalization is what lets a wrong answer show *the passage it came from* even after a later reprocess has replaced the chunk rows.
+
+Scoring is a pure module (`lib/quiz/scoring.ts`): `scoreQuiz` returns the score, the correct/missed id sets, and missed topics ordered most-missed-first; `missedQuestions` derives the retry set. Unanswered questions count as wrong. All of it is unit-tested in `tests/unit/quiz-scoring.test.ts`, and the demo's hand-authored questions are integrity-checked in `tests/unit/demo-quiz-seed.test.ts` (four distinct options, in-range `correctIndex`, a real chunk id, and an excerpt that is exact text from the page).
+
+**Quiz results feed back into ranking.** Finishing a full quiz raises the learned weight of every topic with a wrong answer by `QUIZ_MISS_LEARNED_WEIGHT_DELTA` (0.12 — more than a save's 0.08, since the user demonstrably didn't know it). `learnedWeight` is already consumed by `topicRelevance` in `lib/feed/ranking.ts` as "how much should this topic surface", so a missed topic surfaces more often in the feed with no new ranking concept and no per-card mastery guesswork about *which* cards in the topic to penalize. Retry rounds deliberately don't re-report, so the missed subset isn't double-weighted.
+
+**Demo quizzes are pre-authored, not generated at runtime.** `lib/demo/quiz-seed.ts` holds hand-written questions over the same repository-owned course notes, with excerpts extracted from the real page text rather than retyped — the same zero-credential approach as the pre-rendered demo reels.
 
 ## Feed ranking
 

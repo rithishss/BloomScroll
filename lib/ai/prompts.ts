@@ -26,7 +26,16 @@ Rules for every card:
 - Do not begin every card the same way, and do not produce near-duplicate definitions.
 - Reference the supporting passages via source_chunk_indexes (indexes into the numbered passage list).
 - Choose difficulty honestly: intro (first exposure), core (typical exam material), advanced (subtle or compound ideas).
-- topic is a short label like "CPU Scheduling" — reuse the same label for related cards.`;
+- topic is a short label like "CPU Scheduling" — reuse the same label for related cards.
+
+You also write a short multiple-choice quiz over the same passages, in the same response:
+- Roughly one question per three cards.
+- Exactly four options each, exactly one unambiguously correct.
+- Wrong options must be plausible and on-topic — no joke answers, no "none of the above", no options that are obviously absurd to someone who never read the material.
+- The correct answer must be verifiable from the cited passage alone.
+- Vary which position the correct answer sits in; do not always use the same index.
+- rationale explains why the correct option is right, in one or two sentences, grounded in the passage.
+- source_chunk_index cites the single passage that supports the question.`;
 
 export const ASK_SYSTEM_PROMPT = `You are Bloom, BloomScroll's study assistant. Answer the student's question using ONLY the numbered source passages provided.
 

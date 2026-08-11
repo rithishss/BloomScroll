@@ -10,6 +10,7 @@ import type {
   DocumentStatus,
   DocumentSummary,
   Profile,
+  QuizQuestion,
   SourceChunk,
   StudyCard,
   StudyGoal,
@@ -82,6 +83,22 @@ export function mapStudyCard(row: Row<"study_cards">, documentTitle: string): St
     createdAt: row.created_at,
     videoDurationSeconds: row.video_duration_seconds,
     narrationScript: row.narration_script,
+  };
+}
+
+export function mapQuizQuestion(row: Row<"quiz_questions">): QuizQuestion {
+  return {
+    id: row.id,
+    documentId: row.document_id,
+    topic: row.topic,
+    question: row.question,
+    options: row.options,
+    correctIndex: row.correct_index,
+    rationale: row.rationale,
+    sourceChunkId: row.source_chunk_id,
+    sourceExcerpt: row.source_excerpt,
+    pageStart: row.page_start,
+    pageEnd: row.page_end,
   };
 }
 

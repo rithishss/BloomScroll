@@ -93,6 +93,19 @@ export function applyCardEvent(
 export const LONG_DWELL_MS = 12_000;
 
 /**
+ * How much one missed quiz question raises its topic's learned weight.
+ *
+ * `learnedWeight` is consumed by ranking as "how much should this topic
+ * surface", and getting a question wrong is a strong, explicit signal that
+ * it should surface more — stronger than a save (0.08), since the user
+ * demonstrably didn't know it. Feeding quiz misses in here (rather than
+ * mutating per-card mastery, which would mean guessing *which* cards in the
+ * topic to penalize) keeps the integration to a single upsert against
+ * infrastructure that already exists and is already tested.
+ */
+export const QUIZ_MISS_LEARNED_WEIGHT_DELTA = 0.12;
+
+/**
  * Learned topic-interest adjustment for an event. Saves nudge interest the
  * most; opening the source and long dwell are weaker signals. Dwell time is
  * reported on whichever event advances the card (understood / review_again /

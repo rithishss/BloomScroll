@@ -74,6 +74,8 @@ export interface DocumentSummary {
 export interface DocumentDetail extends DocumentSummary {
   topicBreakdown: { topic: string; cardCount: number; masteryAvg: number }[];
   previewCards: StudyCard[];
+  /** Number of generated quiz questions; 0 means no quiz to take. */
+  quizCount: number;
 }
 
 export interface StudyCard {
@@ -99,6 +101,25 @@ export interface StudyCard {
   /** Spoken narration text (usually the explanation + takeaway), shown as
    * captions under the reel. */
   narrationScript: string | null;
+}
+
+/**
+ * A multiple-choice question generated from a document, alongside its cards
+ * and from the same passages. `sourceExcerpt` + page range let a wrong
+ * answer show the passage it came from rather than a bare "incorrect".
+ */
+export interface QuizQuestion {
+  id: string;
+  documentId: string;
+  topic: string;
+  question: string;
+  options: string[];
+  correctIndex: number;
+  rationale: string;
+  sourceChunkId: string | null;
+  sourceExcerpt: string;
+  pageStart: number;
+  pageEnd: number;
 }
 
 export interface CardState {

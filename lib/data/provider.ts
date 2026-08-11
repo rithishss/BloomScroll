@@ -9,6 +9,7 @@ import type {
   FeedItem,
   FeedPage,
   Profile,
+  QuizQuestion,
   SourceChunk,
   StudyGoal,
   Difficulty,
@@ -46,6 +47,13 @@ export interface DataProvider {
   /** Short-lived signed URL in real mode; a repo-owned PDF in demo mode.
    * `null` url with a note when a direct link cannot be produced. */
   getDocumentUrl(documentId: string): Promise<{ url: string | null; note: string | null }>;
+  /** The document's generated quiz, in presentation order. Empty when the
+   * document has no usable questions (e.g. a demo upload, or a document
+   * whose generation produced none). */
+  getQuiz(documentId: string): Promise<QuizQuestion[]>;
+  /** Feeds a finished quiz back into ranking: topics with wrong answers get
+   * a learned-weight bump so they surface more often in the feed. */
+  recordQuizResult(input: { missedTopics: string[] }): Promise<void>;
 
   getFeed(opts: {
     documentIds?: string[];

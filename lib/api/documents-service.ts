@@ -78,7 +78,7 @@ export async function getDocumentDetail(
   if (error) throw new Error(error.message);
   if (!row) return null;
 
-  const [extras, cardsRes, statesRes] = await Promise.all([
+  const [extras, cardsRes, statesRes, quizRes] = await Promise.all([
     loadExtras(supabase, userId, [documentId]),
     supabase
       .from("study_cards")
@@ -88,6 +88,11 @@ export async function getDocumentDetail(
       .order("created_at", { ascending: true })
       .limit(200),
     supabase.from("card_states").select("card_id, mastery_score").eq("user_id", userId),
+    supabase
+      .from("quiz_questions")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("document_id", documentId),
   ]);
 
   const cards = (cardsRes.data ?? []).map((c) => mapStudyCard(c, row.title));
@@ -109,6 +114,7 @@ export async function getDocumentDetail(
       masteryAvg: count > 0 ? masterySum / count : 0,
     })),
     previewCards: cards.slice(0, 6),
+    quizCount: (quizRes.data ?? []).length,
   };
 }
 

@@ -11,7 +11,7 @@ Each claim below maps to the exact files, database objects, and demo steps that 
 **Full-stack:**
 - Frontend: `components/screens/feed-screen.tsx`, `components/feed/card-stack.tsx`, and its two interchangeable faces — `components/feed/study-card-face.tsx` (text) and `components/feed/video-reel-face.tsx` (narrated video), chosen by a persisted toggle (`lib/feed/use-feed-face.ts`). Next.js App Router, TypeScript, Tailwind, Motion.
 - Backend: `app/api/documents/route.ts` (upload), `app/api/documents/[documentId]/process/route.ts` (processing trigger), `lib/documents/job-runner.ts` + `lib/documents/pipeline.ts` (extraction → chunking → embedding → script generation → video rendering).
-- Database: `supabase/migrations/00001_schema.sql` + `00004_video_reels.sql` — `documents`, `document_chunks`, `study_cards` (with `video_storage_path`/`video_duration_seconds`/`narration_script`) tables.
+- Database: `supabase/migrations/00001_schema.sql` + `00004_video_reels.sql` + `00005_quiz.sql` — `documents`, `document_chunks`, `study_cards` (with `video_storage_path`/`video_duration_seconds`/`narration_script`) tables.
 
 **Upload → cards, generated from source material (not invented):**
 - Validation: `lib/validation/upload.ts` (`validatePdfUpload`, extension/MIME/size/`%PDF-` header check).

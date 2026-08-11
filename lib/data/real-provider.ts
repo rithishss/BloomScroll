@@ -10,6 +10,7 @@ import type {
   FeedPage,
   FeedItem,
   Profile,
+  QuizQuestion,
   SourceChunk,
   StudyGoal,
   Difficulty,
@@ -125,6 +126,17 @@ export class RealProvider implements DataProvider {
 
   async getCardVideoUrl(cardId: string): Promise<{ url: string | null; note: string | null }> {
     return call(`/api/cards/${encodeURIComponent(cardId)}/video-url`);
+  }
+
+  async getQuiz(documentId: string): Promise<QuizQuestion[]> {
+    const { questions } = await call<{ questions: QuizQuestion[] }>(
+      `/api/documents/${encodeURIComponent(documentId)}/quiz`,
+    );
+    return questions;
+  }
+
+  async recordQuizResult(input: { missedTopics: string[] }): Promise<void> {
+    await call("/api/quiz/result", { method: "POST", body: JSON.stringify(input) });
   }
 
   async getFeed(opts: {

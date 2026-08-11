@@ -6,7 +6,10 @@ import {
   type PipelineDeps,
   type RenderedVideo,
 } from "@/lib/documents/pipeline";
-import type { GeneratedCardWithSource } from "@/lib/ai/generate-cards";
+import type {
+  GeneratedCardWithSource,
+  GeneratedQuizQuestionWithSource,
+} from "@/lib/ai/generate-cards";
 
 /**
  * Integration tests for the ingestion pipeline, using an in-memory fake for
@@ -35,6 +38,24 @@ function fakeCard(overrides: Partial<GeneratedCardWithSource> = {}): GeneratedCa
   };
 }
 
+function fakeQuizQuestion(
+  overrides: Partial<GeneratedQuizQuestionWithSource> = {},
+): GeneratedQuizQuestionWithSource {
+  return {
+    topic: "Test Topic",
+    question: "What does the test assert?",
+    options: ["The right thing", "A wrong thing", "Another wrong thing", "A third wrong thing"],
+    correct_index: 0,
+    rationale: "Because the passage says so, in enough words to pass validation.",
+    source_chunk_index: 0,
+    sourceChunkId: "chunk-0",
+    sourceExcerpt: "Test excerpt.",
+    pageStart: 1,
+    pageEnd: 1,
+    ...overrides,
+  };
+}
+
 function fakeVideo(overrides: Partial<RenderedVideo> = {}): RenderedVideo {
   return {
     mp4: Buffer.from("fake-mp4-bytes"),
@@ -52,6 +73,7 @@ class FakeDb implements PipelineDb {
   chunks = new Map<string, unknown[]>();
   cards = new Map<string, unknown[]>();
   videos = new Map<string, RenderedVideo>();
+  quiz = new Map<string, GeneratedQuizQuestionWithSource[]>();
   claimAttempts: string[] = [];
   private nextCardId = 0;
 
@@ -82,8 +104,10 @@ class FakeDb implements PipelineDb {
   }
 
   async deleteDerivedData(documentId: string) {
+    // Mirrors job-runner.ts, which clears chunks, cards, *and* quiz rows.
     this.chunks.delete(documentId);
     this.cards.delete(documentId);
+    this.quiz.delete(documentId);
   }
 
   async insertChunks(documentId: string, chunks: Parameters<PipelineDb["insertChunks"]>[1]) {
@@ -94,6 +118,10 @@ class FakeDb implements PipelineDb {
   async insertCards(documentId: string, cards: GeneratedCardWithSource[]) {
     this.cards.set(documentId, cards);
     return cards.map(() => ({ id: `card-${this.nextCardId++}` }));
+  }
+
+  async insertQuizQuestions(documentId: string, questions: GeneratedQuizQuestionWithSource[]) {
+    this.quiz.set(documentId, questions);
   }
 
   async saveCardVideo(cardId: string, video: RenderedVideo) {
@@ -110,7 +138,7 @@ function fakeDeps(db: FakeDb, overrides: Partial<PipelineDeps> = {}): PipelineDe
       pageCount: 1,
     })),
     embedTexts: vi.fn(async (texts: string[]) => texts.map(() => Array(1536).fill(0.01))),
-    generateCards: vi.fn(async () => [fakeCard()]),
+    generateContent: vi.fn(async () => ({ cards: [fakeCard()], quiz: [fakeQuizQuestion()] })),
     renderVideo: vi.fn(async () => fakeVideo()),
     ...overrides,
   };
@@ -129,7 +157,10 @@ describe("processDocument — happy path", () => {
   it("renders and saves a video for every generated card", async () => {
     const db = new FakeDb();
     const deps = fakeDeps(db, {
-      generateCards: vi.fn(async () => [fakeCard({ title: "A" }), fakeCard({ title: "B" })]),
+      generateContent: vi.fn(async () => ({
+        cards: [fakeCard({ title: "A" }), fakeCard({ title: "B" })],
+        quiz: [fakeQuizQuestion()],
+      })),
     });
     await processDocument("doc-1", TITLE, deps);
     expect(db.videos.size).toBe(2);
@@ -236,7 +267,9 @@ describe("processDocument — failure handling", () => {
 
   it("fails cleanly when card generation produces nothing", async () => {
     const db = new FakeDb();
-    const deps = fakeDeps(db, { generateCards: vi.fn(async () => []) });
+    const deps = fakeDeps(db, {
+      generateContent: vi.fn(async () => ({ cards: [], quiz: [] })),
+    });
     const result = await processDocument("doc-1", TITLE, deps);
     expect(result.status).toBe("failed");
   });
@@ -255,5 +288,31 @@ describe("processDocument — failure handling", () => {
     if (result.status === "failed") {
       expect(result.message).toMatch(/reel/i);
     }
+  });
+});
+
+describe("processDocument — quiz", () => {
+  it("stores the quiz generated alongside the cards", async () => {
+    const db = new FakeDb();
+    const result = await processDocument("doc-1", TITLE, fakeDeps(db));
+    expect(result).toMatchObject({ status: "ready", quizCount: 1 });
+    expect(db.quiz.get("doc-1")).toHaveLength(1);
+  });
+
+  it("still succeeds when generation produces no usable quiz questions", async () => {
+    const db = new FakeDb();
+    const deps = fakeDeps(db, {
+      generateContent: vi.fn(async () => ({ cards: [fakeCard()], quiz: [] })),
+    });
+    const result = await processDocument("doc-1", TITLE, deps);
+    expect(result).toMatchObject({ status: "ready", cardCount: 1, quizCount: 0 });
+  });
+
+  it("clears a prior run's quiz before reprocessing", async () => {
+    const db = new FakeDb("failed");
+    db.quiz.set("doc-1", [fakeQuizQuestion({ question: "stale?" })]);
+    await processDocument("doc-1", TITLE, fakeDeps(db));
+    const stored = db.quiz.get("doc-1") ?? [];
+    expect(stored.every((q) => q.question !== "stale?")).toBe(true);
   });
 });

@@ -25,7 +25,8 @@ Run the app locally (see below) and visit `/demo/feed`, `/demo/library`, and `/d
 4. Once ready, the document's cards join the personalized feed.
 5. The user studies the feed, in whichever face they prefer: a **text card** (type/topic/difficulty badges, title, explanation, optional example or memory hook) or the same card as a **narrated video reel** (that content baked into the frame and read aloud). Either way, swipe or use buttons for "Got it" / "Review again" / "Save"; every action adjusts future ranking and spaced review identically.
 6. Every card has a source drawer showing the exact stored excerpt, page number, and (when available) a deep link into the source PDF.
-7. Ask Bloom answers questions using only retrieved passages from the user's own documents, with citations — and says so honestly when the material doesn't cover the question.
+7. Each document also gets a **multiple-choice quiz**, generated in the same pass as its cards. Answer, see the source passage behind anything you miss, get a score, and retry just the missed questions. Missed topics get a learned-weight bump so they surface more often in the feed.
+8. Ask Bloom answers questions using only retrieved passages from the user's own documents, with citations — and says so honestly when the material doesn't cover the question.
 
 ## Architecture summary
 
@@ -73,7 +74,7 @@ npm run demo:videos   # macOS only; ~1-2 minutes for 23 reels
    supabase link --project-ref <your-project-ref>
    supabase db push
    ```
-   This runs `supabase/migrations/00001_schema.sql` (tables, RLS, triggers), `00002_storage.sql` (private `documents` bucket + storage policies), `00003_functions.sql` (`match_document_chunks` RPC), and `00004_video_reels.sql` (adds the reel columns to `study_cards` and the `rendering` document status).
+   This runs `supabase/migrations/00001_schema.sql` (tables, RLS, triggers), `00002_storage.sql` (private `documents` bucket + storage policies), `00003_functions.sql` (`match_document_chunks` RPC), `00004_video_reels.sql` (adds the reel columns to `study_cards` and the `rendering` document status), and `00005_quiz.sql` (the `quiz_questions` table).
 3. Copy `.env.example` to `.env.local` and fill in:
    ```
    NEXT_PUBLIC_SUPABASE_URL=https://<project>.supabase.co
@@ -165,7 +166,7 @@ npm run start
 1. **Extract** — LangChain's `PDFLoader` extracts text page-by-page (`lib/documents/pdf.ts`), preserving original page numbers and detecting scanned/no-text PDFs honestly.
 2. **Chunk** — `RecursiveCharacterTextSplitter` (`lib/documents/chunking.ts`) splits into ~700–1000 token chunks with ~125 token overlap, mapping each chunk back to the page range its characters came from.
 3. **Embed** — chunks are embedded in batches of 32 with retry/backoff (`lib/documents/job-runner.ts`) and stored in `document_chunks.embedding` (pgvector).
-4. **Generate cards** — the chat model is called with structured-output validation against a Zod schema (`lib/ai/schemas.ts`); each generated card must cite in-range source-chunk indexes, near-duplicates are removed by token-Jaccard similarity, and the stored excerpt is derived from the actual chunk text — never from the model's own words.
+4. **Generate cards and the quiz** — one chat call produces both, with structured-output validation against a Zod schema (`lib/ai/schemas.ts`); each generated card must cite in-range source-chunk indexes, near-duplicates are removed by token-Jaccard similarity, and the stored excerpt is derived from the actual chunk text — never from the model's own words. Quiz questions are validated more leniently than cards: an unusable question (out-of-range citation, duplicate options) is dropped rather than failing the batch, since a document with good cards and a short quiz beats a failed document.
 5. **Render reels** — see the video-rendering pipeline below.
 6. **Ask Bloom** — the question is embedded, `match_document_chunks` retrieves the top ~8 owned chunks above a similarity threshold, a lightweight rerank caps any one document at 3 chunks for diversity, and the model answers strictly from that context — with `insufficient_evidence: true` returned honestly when the retrieved chunks don't support an answer.
 

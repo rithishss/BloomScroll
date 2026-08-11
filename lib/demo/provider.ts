@@ -10,6 +10,7 @@ import type {
   FeedItem,
   FeedPage,
   Profile,
+  QuizQuestion,
   SourceChunk,
   StudyCard,
   StudyGoal,
@@ -21,9 +22,11 @@ import {
   isTopicSuppressed,
   learnedWeightDelta,
   trackSkip,
+  QUIZ_MISS_LEARNED_WEIGHT_DELTA,
 } from "@/lib/feed/mastery";
 import { deriveTopicEngagement, explorationSeed, rankCards } from "@/lib/feed/ranking";
 import { buildDemoAnswer } from "@/lib/demo/retrieval";
+import { buildDemoQuizzes } from "@/lib/demo/quiz-seed";
 import { buildDemoCards, buildDemoChunks, buildDemoDocuments, DEMO_USER_ID } from "@/lib/demo/seed";
 import { DemoStore, LocalStorageKV, type KeyValueStore } from "@/lib/demo/storage";
 import { validatePdfUpload } from "@/lib/validation/upload";
@@ -129,7 +132,12 @@ export class DemoProvider implements DataProvider {
         masteryAvg: masteries.reduce((a, b) => a + b, 0) / Math.max(1, masteries.length),
       };
     });
-    return { ...doc, topicBreakdown, previewCards: cards.slice(0, 6) };
+    return {
+      ...doc,
+      topicBreakdown,
+      previewCards: cards.slice(0, 6),
+      quizCount: (buildDemoQuizzes()[documentId] ?? []).length,
+    };
   }
 
   async uploadDocument(file: File): Promise<DocumentSummary> {
@@ -219,6 +227,33 @@ export class DemoProvider implements DataProvider {
       return { url: `/demo-pdfs/${seeded.originalFilename}`, note: null };
     }
     return { url: null, note: UPLOAD_NOTE };
+  }
+
+  async getQuiz(documentId: string): Promise<QuizQuestion[]> {
+    // Demo uploads are simulated and generate nothing, so only the seeded
+    // documents have a quiz.
+    return buildDemoQuizzes()[documentId] ?? [];
+  }
+
+  async recordQuizResult(input: { missedTopics: string[] }): Promise<void> {
+    if (input.missedTopics.length === 0) return;
+    const missed = new Set(input.missedTopics);
+    this.store.update((s) => {
+      const seen = new Set(s.topicPrefs.map((p) => p.topic));
+      const bumped = s.topicPrefs.map((p) =>
+        missed.has(p.topic)
+          ? { ...p, learnedWeight: clamp01(p.learnedWeight + QUIZ_MISS_LEARNED_WEIGHT_DELTA) }
+          : p,
+      );
+      const added = [...missed]
+        .filter((topic) => !seen.has(topic))
+        .map((topic) => ({
+          topic,
+          explicitWeight: 0.5,
+          learnedWeight: clamp01(0.3 + QUIZ_MISS_LEARNED_WEIGHT_DELTA),
+        }));
+      return { ...s, topicPrefs: [...bumped, ...added] };
+    });
   }
 
   async getCardVideoUrl(cardId: string): Promise<{ url: string | null; note: string | null }> {

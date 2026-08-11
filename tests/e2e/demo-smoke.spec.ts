@@ -161,6 +161,48 @@ test("Ask Bloom produces a cited demo response", async ({ page }) => {
   await expect(page.getByRole("button", { name: /p\.\s*\d+|pp\.\s*\d+/i }).first()).toBeVisible();
 });
 
+test("a document quiz can be taken end to end, with retry-missed", async ({ page }) => {
+  await page.goto("/demo/library/demo-doc-os");
+
+  // Reachable from the document screen, and honest about its length.
+  const quizLink = page.getByRole("link", { name: /take the quiz/i });
+  await expect(quizLink).toBeVisible();
+  await quizLink.click();
+  await page.waitForURL(/\/demo\/library\/demo-doc-os\/quiz/);
+
+  await expect(page.getByRole("heading", { name: /^quiz$/i })).toBeVisible();
+  const counter = page.getByText(/Question 1 of \d+/);
+  await expect(counter).toBeVisible();
+  const total = Number((await counter.textContent())?.match(/of (\d+)/)?.[1] ?? 0);
+  expect(total).toBeGreaterThanOrEqual(5);
+
+  // Answer every question by always choosing the last option. That is wrong
+  // for most questions, which is what we want: it exercises the incorrect
+  // path (rationale + source passage) and guarantees a non-empty retry set.
+  for (let i = 0; i < total; i++) {
+    await page.locator("li button").last().click();
+    // A wrong answer must show its supporting passage, never a bare verdict.
+    const verdict = page.getByRole("status");
+    await expect(verdict).toBeVisible();
+    if ((await verdict.textContent())?.match(/not quite/i)) {
+      await expect(page.getByText(/from your notes/i)).toBeVisible();
+    }
+    await page.getByRole("button", { name: /next question|see results/i }).click();
+  }
+
+  // Results: a score out of the real total, and a retry for the missed set.
+  await expect(page.getByText(/\d+ of \d+ correct/)).toBeVisible();
+  const retry = page.getByRole("button", { name: /retry \d+ missed/i });
+  await expect(retry).toBeVisible();
+  const missedCount = Number((await retry.textContent())?.match(/(\d+)/)?.[1] ?? 0);
+  expect(missedCount).toBeGreaterThan(0);
+  expect(missedCount).toBeLessThanOrEqual(total);
+
+  await retry.click();
+  await expect(page.getByRole("heading", { name: /retrying missed questions/i })).toBeVisible();
+  await expect(page.getByText(`Question 1 of ${missedCount}`)).toBeVisible();
+});
+
 test("mobile navigation exposes the primary sections", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile", "Mobile bottom nav only renders below md:");
   const errors = collectConsoleErrors(page);
