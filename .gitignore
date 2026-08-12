@@ -43,6 +43,10 @@ yarn-error.log*
 # claude code local settings (per-developer, not shared)
 .claude/settings.local.json
 
+# ai coding-agent instruction files (local tooling, not part of the project)
+CLAUDE.md
+AGENTS.md
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
